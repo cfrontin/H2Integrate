@@ -30,12 +30,6 @@ def _make_controller_with_config(config, n_timesteps=24):
 
 @pytest.fixture
 def base_config():
-    """24-hour PLM config shared by optimizer regression tests.
-
-    Storage: 10 kWh capacity, 1 kW max rate, starts fully charged.
-    Peak window: 08:00-18:00
-    Signal: monotonically increasing.
-    """
     n = 24
     return PLMOptimizedControllerConfig(
         max_capacity=10.0,

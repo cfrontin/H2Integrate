@@ -190,9 +190,6 @@ from h2integrate.control.control_strategies.storage.optimized_pyomo_controller i
 from h2integrate.control.control_strategies.storage.simple_openloop_controller import (
     SimpleStorageOpenLoopController,
 )
-from h2integrate.control.control_strategies.storage.plm_openloop_storage_controller import (
-    PeakLoadManagementOpenLoopStorageController,
-)
 from h2integrate.control.control_strategies.storage.plm_optimized_storage_controller import (
     PLMOptimizedStorageController,
 )
@@ -311,7 +308,6 @@ supported_models = {
     # Control
     "SimpleStorageOpenLoopController": SimpleStorageOpenLoopController,
     "DemandOpenLoopStorageController": DemandOpenLoopStorageController,
-    "PeakLoadManagementOpenLoopStorageController": PeakLoadManagementOpenLoopStorageController,
     "PLMOptimizedStorageController": PLMOptimizedStorageController,
     "HeuristicLoadFollowingStorageController": HeuristicLoadFollowingStorageController,
     "OptimizedDispatchStorageController": OptimizedDispatchStorageController,

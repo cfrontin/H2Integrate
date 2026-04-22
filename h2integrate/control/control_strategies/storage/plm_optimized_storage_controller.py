@@ -59,7 +59,7 @@ class PLMOptimizedControllerConfig(PyomoStorageControllerBaseConfig):
     discharge_efficiency: float = field(validator=range_val(0, 1), default=1.0)
     n_max_events: int = field(default=10)
     n_control_window: int = field(default=24 * 30)  # one month of hourly data
-    signal_threshold_percentile: float = field(default=0.0, validator=range_val(0,100))
+    signal_threshold_percentile: float = field(default=0.0, validator=range_val(0,100)) # make sure this is valid
 
 
 class PLMOptimizedStorageController(PyomoStorageControllerBaseClass):

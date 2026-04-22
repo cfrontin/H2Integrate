@@ -12,7 +12,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from h2integrate.core.h2integrate_model import H2IntegrateModel
-from h2integrate.core.utilities import build_time_series_from_plant_config
 
 EXAMPLE_DIR = Path(__file__).parent
 
@@ -21,16 +20,26 @@ model = H2IntegrateModel(EXAMPLE_DIR / "34_plm_optimized_dispatch.yaml")
 model.setup()
 
 N = model.plant_config["plant"]["simulation"]["n_timesteps"]
-percentile = model.technology_config["technologies"]["battery"]["model_inputs"]["control_parameters"]["signal_threshold_percentile"]
+percentile = model.technology_config["technologies"]["battery"]["model_inputs"][
+    "control_parameters"
+]["signal_threshold_percentile"]
 
 model.run()
 
 lmp = np.array(
-    model.technology_config["technologies"]["battery"]["model_inputs"]
-    ["control_parameters"]["supervisory_signal"]
+    model.technology_config["technologies"]["battery"]["model_inputs"][
+        "control_parameters"
+    ]["supervisory_signal"]
 )[:N]
 
-time_index = pd.DatetimeIndex(build_time_series_from_plant_config(model.plant_config))
+sim = model.plant_config["plant"]["simulation"]
+n_timesteps = int(sim["n_timesteps"])
+dt_seconds = int(sim["dt"])
+tz = int(sim["timezone"])
+start = pd.Timestamp(sim["start_time"], tz=tz)
+freq = pd.to_timedelta(dt_seconds, unit="s")
+time_index = pd.date_range(start=start, periods=n_timesteps, freq=freq)
+
 battery_power = model.prob.get_val("battery.storage_electricity_discharge", units="kW")
 soc_pct = model.prob.get_val("battery.SOC", units="percent")
 
@@ -50,7 +59,10 @@ def shade_peaks(ax):
         ax.axvspan(
             day + pd.Timedelta(hours=14),
             day + pd.Timedelta(hours=18),
-            color="orange", alpha=0.10, linewidth=0, zorder=0,
+            color="orange",
+            alpha=0.10,
+            linewidth=0,
+            zorder=0,
         )
 
 
@@ -60,14 +72,21 @@ ax = axes[0]
 shade_peaks(ax)
 ax.plot(time_index[:time_window], lmp[:time_window], color="steelblue", linewidth=1.0)
 ax.axhline(threshold_pct, color="crimson", linestyle="--", linewidth=0.8)
-ax.plot(time_index[:time_window][w_discharge], lmp[:time_window][w_discharge],
-        "r*", markersize=8, zorder=5)
+ax.plot(
+    time_index[:time_window][w_discharge],
+    lmp[:time_window][w_discharge],
+    "r*",
+    markersize=8,
+    zorder=5,
+)
 ax.set_ylabel("LMP ($/MWh)", fontsize=8)
 ax.set_ylim(bottom=0)
 
 # Panel 2: SOC
 ax = axes[1]
-ax.plot(time_index[:time_window], soc_pct[:time_window], color="tab:green", linewidth=1.0)
+ax.plot(
+    time_index[:time_window], soc_pct[:time_window], color="tab:green", linewidth=1.0
+)
 ax.axhline(90, color="gray", linestyle=":", linewidth=0.7)
 ax.axhline(10, color="gray", linestyle=":", linewidth=0.7)
 ax.set_ylabel("SOC (%)", fontsize=8)
@@ -79,10 +98,20 @@ ax.axhline(0, color="black", linewidth=0.4)
 width = pd.Timedelta(hours=0.8)
 pos_mask = (battery_power > 1)[:time_window]
 neg_mask = (battery_power < -1)[:time_window]
-ax.bar(time_index[:time_window][pos_mask], battery_power[:time_window][pos_mask] * 1e-3,
-       width=width, color="tab:red", alpha=0.8)
-ax.bar(time_index[:time_window][neg_mask], battery_power[:time_window][neg_mask] * 1e-3,
-       width=width, color="tab:blue", alpha=0.8)
+ax.bar(
+    time_index[:time_window][pos_mask],
+    battery_power[:time_window][pos_mask] * 1e-3,
+    width=width,
+    color="tab:red",
+    alpha=0.8,
+)
+ax.bar(
+    time_index[:time_window][neg_mask],
+    battery_power[:time_window][neg_mask] * 1e-3,
+    width=width,
+    color="tab:blue",
+    alpha=0.8,
+)
 ax.set_ylabel("Power (MW)", fontsize=8)
 ax.tick_params(axis="x", labelrotation=30, labelsize=7)
 
