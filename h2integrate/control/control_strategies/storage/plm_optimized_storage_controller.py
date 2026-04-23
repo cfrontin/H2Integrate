@@ -44,7 +44,7 @@ class PLMOptimizedControllerConfig(PyomoStorageControllerBaseConfig):
         n_max_events (int): Maximum discharge events per calendar month.
             Defaults to 10.
         n_control_window (int): Number of timesteps per rolling solve
-            window. Defaults to ``24 * 30`` (one month of hourly data).
+            window. Defaults to ``24`` (one day).
         signal_threshold_percentile (float): Percentile (0-100) used to
             compute the signal threshold for each rolling window. Only
             hours at or above this percentile of the window signal are
@@ -58,7 +58,7 @@ class PLMOptimizedControllerConfig(PyomoStorageControllerBaseConfig):
     charge_efficiency: float = field(validator=range_val(0, 1), default=1.0)
     discharge_efficiency: float = field(validator=range_val(0, 1), default=1.0)
     n_max_events: int = field(default=10)
-    n_control_window: int = field(default=24 * 30)  # one month of hourly data
+    n_control_window: int = field(default=24)  # one month of hourly data
     signal_threshold_percentile: float = field(default=0.0, validator=range_val(0,100)) # make sure this is valid
 
 
@@ -121,12 +121,12 @@ class PLMOptimizedStorageController(PyomoStorageControllerBaseClass):
 
     @staticmethod
     def _build_time_index(plant_config: dict) -> pd.DatetimeIndex:
-        """Build a timezone-aware DatetimeIndex from simulation settings in plant_config.
+        """Build a DatetimeIndex from simulation settings in plant_config.
 
         Args:
             plant_config (dict): Plant configuration dict. Must contain
                 ``plant.simulation`` with keys ``n_timesteps`` (int),
-                ``dt`` (int, seconds), ``timezone`` (int, UTC offset),
+                ``dt`` (int, seconds), ``timezone`` (int),
                 and ``start_time`` (str).
 
         Returns:
@@ -189,7 +189,7 @@ class PLMOptimizedStorageController(PyomoStorageControllerBaseClass):
     def _compute_eligible_mask(self, signal_window: np.ndarray) -> np.ndarray:
         """Build a boolean mask for timesteps whose signal meets the dispatch threshold.
 
-        The threshold is derived only from ``signal_window`` — it does not
+        The threshold is derived only from ``signal_window``. It does not
         assume the full simulation signal is known in advance. When
         ``signal_threshold_percentile`` is 0.0 all hours are eligible.
 
@@ -333,10 +333,9 @@ class PLMOptimizedStorageController(PyomoStorageControllerBaseClass):
         """Build the DR MILP for a single rolling window.
 
         Args:
-            window_start (int): Global timestep index of the first hour
+            window_start (int): Timestep index of the first hour
                 in this window.
             window_len (int): Number of timesteps in this window
-                (``n_control_window`` except possibly the last window).
             init_soc (float): State-of-charge fraction at the start of
                 this window.
             remaining_budget (dict): Mapping of ``month_id (int)`` to
@@ -445,7 +444,7 @@ class PLMOptimizedStorageController(PyomoStorageControllerBaseClass):
                 Defaults to 0.
 
         Raises:
-            RuntimeError: If GLPK returns a non-OK status or an
+            RuntimeError: If GLPK returns a not OK status or an
                 unacceptable termination condition.
         """
         from pyomo.opt import SolverStatus, TerminationCondition
