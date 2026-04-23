@@ -45,7 +45,7 @@ class PLMOptimizedControllerConfig(PyomoStorageControllerBaseConfig):
             Defaults to 10.
         n_control_window (int): Number of timesteps per rolling solve
             window. Defaults to ``24 * 30`` (one month of hourly data).
-        signal_threshold_percentile (float): Percentile (0–100) used to
+        signal_threshold_percentile (float): Percentile (0-100) used to
             compute the signal threshold for each rolling window. Only
             hours at or above this percentile of the window signal are
             eligible for dispatch. Defaults to 0.0 (all hours eligible).
@@ -179,7 +179,7 @@ class PLMOptimizedStorageController(PyomoStorageControllerBaseClass):
         return np.array([start <= t <= end for t in times])
 
     def _compute_month_ids(self) -> np.ndarray:
-        """Return the calendar month index (1–12) for each timestep.
+        """Return the calendar month index (1-12) for each timestep.
 
         Returns:
             np.ndarray: Integer array of shape ``(n_timesteps,)``.
@@ -215,8 +215,7 @@ class PLMOptimizedStorageController(PyomoStorageControllerBaseClass):
         """Return the rolling-horizon dispatch solver callable.
 
         Args:
-            discrete_inputs (dict): OpenMDAO discrete inputs (unused
-                directly here; passed for API compatibility).
+            discrete_inputs (dict): OpenMDAO discrete inputs. 
 
         Returns:
             callable: ``pyomo_dispatch_solver(performance_model,
@@ -230,7 +229,7 @@ class PLMOptimizedStorageController(PyomoStorageControllerBaseClass):
                commands.
             4. Carries the terminal SOC into the next window.
 
-            Returns ``(storage_out, soc_out)`` — two ``np.ndarray`` of
+            Returns ``(storage_out, soc_out)`` - two ``np.ndarray`` of
             length ``n_timesteps``.
         """
 
@@ -439,7 +438,7 @@ class PLMOptimizedStorageController(PyomoStorageControllerBaseClass):
         """Solve the DR MILP for the current window and record solver metrics.
 
         Args:
-            start_time (int): Global timestep index of the window start.
+            start_time (int): Timestep index of the window start.
                 Used only for error messages and metrics. Defaults to 0.
             n_days (int): Total simulation days. Passed to
                 ``DispatchProblemState.store_problem_metrics``.

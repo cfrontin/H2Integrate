@@ -67,7 +67,7 @@ This controller optimizes the dispatch of a Battery Energy Storage System (BESS)
 
 **Given:**
 - $\lambda_t$ := `supervisory_signal`: price, demand, or price $\times$ demand time series at time $t$
-- $\mathcal{W}$ := `peak_window`: set of hours eligible for d`ispatch (e.g., 12:00--19:00)
+- $\mathcal{W}$ := `peak_window`: set of hours eligible for dispatch (e.g., 12:00--19:00)
 - $\gamma$ := performance incentive (\$/kW per dispatch hour)
 - $\bar{P}$ := `max_charge_rate` (kW): maximum charge and discharge rate, used as deemed capacity since the battery is assumed to always dispatch at full rated power
 - $E_{\max} :=$ `max_capacity` $\times$ (`max_soc_fraction` $-$ `min_soc_fraction`): usable energy capacity (kWh)
@@ -110,10 +110,10 @@ $$
 
 where $\lambda^*_m$ is the threshold selecting the high LMP/peak load hours within month $m$.
 
-- Maximum 10 events per month:
+- Maximum $N_{max}$ events per month:
 
 $$
-\sum_{t \in \mathcal{M}_m} u_t \leq N_{\max} \qquad \forall\, m, \quad N_{\max} = 10
+\sum_{t \in \mathcal{M}_m} u_t \leq N_{\max} \qquad \forall\, m, \quad N_{\max}.
 $$
 
 - SoC evolution with charge and discharge:
@@ -145,4 +145,6 @@ $$
 $$
 u_t \in \{0, 1\}, \quad v_t \in \{0, 1\}, \quad \text{SoC}_t \in [0, 1] \qquad \forall\, t, m
 $$
+Example 34 performs the optimization with a synthetic LMP signal. The look-ahead horizon is set to 10 hours. As this value increases, the computational complexity grows and the solver may take significantly longer to run or fail to converge. Care should be taken when choosing this parameter: a short horizon limits visibility, making it difficult for the optimizer to identify the best dispatch opportunities across the full month. See figure below for the results. 
+
 ![](./figures/plm_optimized_dispatch.png)
