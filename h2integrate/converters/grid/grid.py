@@ -1,7 +1,7 @@
 import numpy as np
 from attrs import field, define
 
-from h2integrate.core.utilities import BaseConfig, merge_shared_inputs
+from h2integrate.core.utilities import BaseConfig, merge_shared_inputs, determine_price_mode
 from h2integrate.core.model_baseclasses import (
     CostModelBaseClass,
     CostModelBaseConfig,
@@ -198,6 +198,7 @@ class GridCostModel(CostModelBaseClass):
         super().setup()
 
         n_timesteps = self.options["plant_config"]["plant"]["simulation"]["n_timesteps"]
+        plant_life = int(self.options["plant_config"]["plant"]["plant_life"])
 
         # Common input for sizing costs
         self.add_input(
@@ -218,17 +219,12 @@ class GridCostModel(CostModelBaseClass):
 
         # Add buy price input if configured
         if self.config.electricity_buy_price is not None:
-            buy_price = self.config.electricity_buy_price
-            if isinstance(buy_price, list | np.ndarray):
-                if len(buy_price) != n_timesteps:
-                    raise ValueError(
-                        f"electricity_buy_price length ({len(buy_price)}) "
-                        f"must match n_timesteps ({n_timesteps})"
-                    )
-                buy_price_shape = n_timesteps
-
-            else:
-                buy_price_shape = 1
+            self._buy_price_mode, buy_price_shape = determine_price_mode(
+                self.config.electricity_buy_price,
+                n_timesteps,
+                plant_life,
+                price_name="electricity_buy_price",
+            )
 
             self.add_input(
                 "electricity_buy_price",
@@ -237,6 +233,8 @@ class GridCostModel(CostModelBaseClass):
                 units="USD/(kW*h)",
                 desc="Price to buy electricity from grid",
             )
+        else:
+            self._buy_price_mode = None
 
         # Electricity flowing INTO grid (selling to grid)
         self.add_input(
@@ -249,16 +247,12 @@ class GridCostModel(CostModelBaseClass):
 
         # Add sell price input if configured
         if self.config.electricity_sell_price is not None:
-            sell_price = self.config.electricity_sell_price
-            if isinstance(sell_price, list | np.ndarray):
-                if len(sell_price) != n_timesteps:
-                    raise ValueError(
-                        f"electricity_sell_price length ({len(sell_price)}) "
-                        f"must match n_timesteps ({n_timesteps})"
-                    )
-                sell_price_shape = n_timesteps
-            else:
-                sell_price_shape = 1
+            self._sell_price_mode, sell_price_shape = determine_price_mode(
+                self.config.electricity_sell_price,
+                n_timesteps,
+                plant_life,
+                price_name="electricity_sell_price",
+            )
 
             self.add_input(
                 "electricity_sell_price",
@@ -267,6 +261,8 @@ class GridCostModel(CostModelBaseClass):
                 units="USD/(kW*h)",
                 desc="Price to sell electricity to grid",
             )
+        else:
+            self._sell_price_mode = None
 
     def compute(self, inputs, outputs, discrete_inputs, discrete_outputs):
         interconnection_size = inputs["interconnection_size"]
@@ -281,21 +277,30 @@ class GridCostModel(CostModelBaseClass):
         outputs["OpEx"] = interconnection_size * opex_per_kw
 
         # Variable operating costs (positive cost for buying, negative for selling)
-        varopex = 0.0
+        plant_life = int(self.options["plant_config"]["plant"]["plant_life"])
+        varopex = np.zeros(plant_life)
 
         # Add buying costs if buy price is configured
         # electricity_out represents power flowing OUT of grid (buying)
         if self.config.electricity_buy_price is not None:
             electricity_out = inputs["electricity_out"]
             buy_price = inputs["electricity_buy_price"]
-            # Buying costs money (positive VarOpEx)
-            varopex += np.sum((self.dt / 3600) * electricity_out * buy_price)
+            if self._buy_price_mode == "per_year":
+                # Per-year price: total energy * price per year
+                total_energy_bought = np.sum(electricity_out) * (self.dt / 3600)
+                varopex += total_energy_bought * buy_price
+            else:
+                # Scalar or per-timestep: same cost each year
+                varopex += np.sum((self.dt / 3600) * electricity_out * buy_price)
 
         # Add selling revenue if sell price is configured
         # electricity_sold represents power flowing INTO grid (selling)
         if self.config.electricity_sell_price is not None:
             sell_price = inputs["electricity_sell_price"]
-            # Selling generates revenue (negative VarOpEx)
-            varopex -= np.sum((self.dt / 3600) * inputs["electricity_sold"] * sell_price)
+            if self._sell_price_mode == "per_year":
+                total_energy_sold = np.sum(inputs["electricity_sold"]) * (self.dt / 3600)
+                varopex -= total_energy_sold * sell_price
+            else:
+                varopex -= np.sum((self.dt / 3600) * inputs["electricity_sold"] * sell_price)
 
         outputs["VarOpEx"] = varopex

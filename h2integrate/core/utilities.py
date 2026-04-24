@@ -1,3 +1,4 @@
+import warnings
 from typing import Any
 from collections import OrderedDict
 
@@ -102,6 +103,63 @@ def merge_shared_inputs(config, input_type):
         return config[f"{input_type}_parameters"]
     else:
         return config["shared_parameters"]
+
+
+def determine_price_mode(price, n_timesteps, plant_life, price_name="price"):
+    """Determine the pricing mode based on the length of the price input.
+
+    Prices can be specified as:
+
+    - A scalar (constant for all timesteps and years).
+    - An array of length ``n_timesteps`` (per-timestep pricing).
+    - An array of length ``plant_life`` (per-year pricing).
+
+    When ``n_timesteps == plant_life`` and the price is an array of that length,
+    the per-year interpretation will be used and a :class:`UserWarning` is
+    raised for clarity.
+
+    Args:
+        price: The price value(s). Can be a scalar (int/float), list, or
+            numpy array.
+        n_timesteps (int): Number of simulation timesteps.
+        plant_life (int): Plant lifetime in years.
+        price_name (str): Name of the price parameter for error/warning
+            messages. Defaults to ``"price"``.
+
+    Returns:
+        tuple[str, int]: A ``(mode, shape)`` tuple where *mode* is one of
+        ``"scalar"``, ``"per_timestep"``, or ``"per_year"``, and *shape* is
+        the appropriate array length for the OpenMDAO input (``1``,
+        ``n_timesteps``, or ``plant_life``).
+
+    Raises:
+        ValueError: If *price* is an array whose length matches neither
+            ``n_timesteps`` nor ``plant_life``.
+    """
+    if isinstance(price, list | np.ndarray):
+        price_len = len(price)
+        if price_len == n_timesteps and n_timesteps == plant_life:
+            warnings.warn(
+                f"{price_name} length ({price_len}) equals both "
+                f"n_timesteps and plant_life ({n_timesteps}). "
+                f"Both values are equal, so the plant_life "
+                f"interpretation will be used.",
+                UserWarning,
+                stacklevel=3,
+            )
+            return "per_year", plant_life
+        elif price_len == n_timesteps:
+            return "per_timestep", n_timesteps
+        elif price_len == plant_life:
+            return "per_year", plant_life
+        else:
+            raise ValueError(
+                f"{price_name} length ({price_len}) "
+                f"must match n_timesteps ({n_timesteps}) "
+                f"or plant_life ({plant_life})"
+            )
+    else:
+        return "scalar", 1
 
 
 @define(kw_only=True)

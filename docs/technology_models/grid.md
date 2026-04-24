@@ -49,9 +49,9 @@ Multiple grid instances may be used within the same plant to represent different
 | `interconnection_opex_per_kw`   | scalar                       | $/kW/year | Annual O&M cost per kW of interconnection.                             |
 | `fixed_interconnection_cost`    | scalar                       | $         | One-time fixed cost regardless of size.                                |
 | `electricity_out`               | array[n_timesteps]           | kW        | Electricity flowing out of grid (buying from grid).                    |
-| `electricity_buy_price`         | scalar/array[n_timesteps]    | $/kWh     | Price to buy electricity from grid (optional, time-varying supported). |
+| `electricity_buy_price`         | scalar/array[n_timesteps]/array[plant_life] | $/kWh     | Price to buy electricity from grid (optional; supports scalar, per-timestep, or per-year). |
 | `electricity_sold`              | array[n_timesteps]           | kW        | Electricity flowing into grid (selling to grid).                       |
-| `electricity_sell_price`        | scalar/array[n_timesteps]    | $/kWh     | Price to sell electricity to grid (optional, time-varying supported).  |
+| `electricity_sell_price`        | scalar/array[n_timesteps]/array[plant_life] | $/kWh     | Price to sell electricity to grid (optional; supports scalar, per-timestep, or per-year).  |
 
 **Outputs**
 | Name      | Description                                                                                                     |
@@ -71,3 +71,13 @@ If you're using a price-maker financial model (e.g., calculating the LCOE) and s
 ```{note}
 The grid components are currently compatible with 5-minute (300-second) to 1-hour (3600-second) time steps.
 ```
+
+### Price Input Modes
+
+The `electricity_buy_price` and `electricity_sell_price` parameters support three input modes:
+
+- **Scalar**: A single value applied uniformly across all timesteps and years.
+- **Per-timestep** (array of length `n_timesteps`): A different price for each simulation timestep, applied uniformly across all years of the plant lifetime.
+- **Per-year** (array of length `plant_life`): A different price for each year of plant operation. The total energy bought or sold during the simulation is multiplied by each year's price to produce a per-year `VarOpEx` array.
+
+If `n_timesteps == plant_life`, the per-year interpretation will be used and a warning is issued.
