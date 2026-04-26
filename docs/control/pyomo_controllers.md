@@ -58,3 +58,90 @@ tech_to_dispatch_connections: [
   ["battery", "battery"],
 ]
 ```
+
+# Optimized Demand Response Controller
+
+This controller optimizes the dispatch of a Battery Energy Storage System (BESS) based on a pre-defined supervisory signal. This pre-defined signal could be the Locational Marginal Price (LMP) or a demand profile. It could also be a $LMP\times demand$ depending on the application. 
+
+## Definitions
+
+**Given:**
+- $\lambda_t$ := `supervisory_signal`: price, demand, or price $\times$ demand time series at time $t$
+- $\mathcal{W}$ := `peak_window`: set of hours eligible for dispatch (e.g., 12:00--19:00)
+- $\gamma$ := performance incentive (\$/kW per dispatch hour)
+- $\bar{P}$ := `max_charge_rate` (kW): maximum charge and discharge rate, used as deemed capacity since the battery is assumed to always dispatch at full rated power
+- $E_{\max} :=$ `max_capacity` $\times$ (`max_soc_fraction` $-$ `min_soc_fraction`): usable energy capacity (kWh)
+- $\eta_c$ := `charge_efficiency`, $\quad \eta_d$ := `discharge_efficiency`
+- $\overline{\text{SoC}}$ := `max_soc_fraction`, $\quad \underline{\text{SoC}}$ := `min_soc_fraction`
+- `n_control_window` := Horizon length for optimization
+- $\mathcal{T} := \{0, 1, \ldots, T\}$: hourly time steps over `n_control_window`
+- $\mathcal{M}_m$ := set of hours in month $m$, for $m = 1, \ldots, 12$
+
+## Decision Variables
+
+- $u_t \in \{0, 1\}$ := discharge binary: 1 if battery dispatches at hour $t$, 0 otherwise
+- $v_t \in \{0, 1\}$ := charge binary: 1 if battery charges at hour $t$, 0 otherwise
+
+## Optimization Problem
+
+This optimization is executed for each window, during which the performance model is invoked and the initial conditions are set.
+
+### Objective
+
+Maximize total annual incentive revenue:
+
+$$
+\max_{u_t,\, v_t} \quad \gamma \cdot \bar{P} \sum_{t \in \mathcal{T}} u_t
+$$
+
+### Constraints
+
+- Dispatch only within peak window:
+
+$$
+u_t = 0 \qquad \forall\, t \notin \mathcal{W}
+$$
+
+- Dispatch only on high supervisory signal:
+
+$$
+u_t = 1 \implies \lambda_t \geq \lambda^*_m \qquad \forall\, t \in \mathcal{M}_m
+$$
+
+where $\lambda^*_m$ is the threshold selecting the high LMP/peak load hours within month $m$.
+
+- Maximum 10 events per month:
+
+$$
+\sum_{t \in \mathcal{M}_m} u_t \leq N_{\max} \qquad \forall\, m, \quad N_{\max} = 10
+$$
+
+- SoC evolution with charge and discharge:
+
+$$
+\text{SoC}_{t+1} = \text{SoC}_t + \frac{\eta_c \cdot v_t \cdot \bar{P}}{E_{\max}} - \frac{u_t \cdot \bar{P}}{\eta_d \cdot E_{\max}} \qquad \forall\, t \in \mathcal{T}
+$$
+
+- SoC bounds:
+
+$$
+\underline{\text{SoC}} \leq \text{SoC}_t \leq \overline{\text{SoC}} \qquad \forall\, t \in \mathcal{T}
+$$
+
+- No simultaneous charge and discharge:
+
+$$
+u_t + v_t \leq 1 \qquad \forall\, t \in \mathcal{T}
+$$
+
+- No charging during dispatch window (battery reserved for discharge):
+
+$$
+v_t = 0 \qquad \forall\, t \in \mathcal{W}
+$$
+
+- Binary variables:
+
+$$
+u_t \in \{0, 1\}, \quad v_t \in \{0, 1\}, \quad \text{SoC}_t \in [0, 1] \qquad \forall\, t, m
+$$
