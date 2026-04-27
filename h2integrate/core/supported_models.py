@@ -298,6 +298,9 @@ supported_models = {
     # Control
     "SimpleStorageOpenLoopController": SimpleStorageOpenLoopController,
     "DemandOpenLoopStorageController": DemandOpenLoopStorageController,
+    "PeakLoadManagementHeuristicOpenLoopStorageController": (
+        PeakLoadManagementHeuristicOpenLoopStorageController
+    ),
     "PLMOptimizedStorageController": (PLMOptimizedStorageController),
     "HeuristicLoadFollowingStorageController": HeuristicLoadFollowingStorageController,
     "OptimizedDispatchStorageController": OptimizedDispatchStorageController,
