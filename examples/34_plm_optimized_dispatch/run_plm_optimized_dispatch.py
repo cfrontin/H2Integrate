@@ -50,8 +50,15 @@ control_params = model.technology_config["technologies"]["battery"]["model_input
 pw_cfg = control_params["peak_window"]
 event_dur_cfg = control_params.get("event_duration")
 
-pw_start_h = int(pw_cfg["start"].split(":")[0])
-pw_end_h = int(pw_cfg["end"].split(":")[0])
+
+def _peak_window_to_hour(val) -> int:
+    if isinstance(val, int | float):
+        return int(val) // 3600
+    return int(str(val).split(":")[0])
+
+
+pw_start_h = _peak_window_to_hour(pw_cfg["start"])
+pw_end_h = _peak_window_to_hour(pw_cfg["end"])
 
 half_td = None
 if event_dur_cfg is not None:

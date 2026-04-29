@@ -188,26 +188,156 @@ class PeakLoadManagementOptimizedStorageController(PyomoStorageControllerBaseCla
         else:
             self.steps_per_event = 1
 
+    def initialize_parameters(self, inputs):
+        """Sync OpenMDAO inputs into the config.
+
+        Args:
+            inputs (dict): OpenMDAO inputs dict. Recognized keys are
+                ``'max_charge_rate'`` and ``'storage_capacity'``.
+        """
+        if "max_charge_rate" in inputs:
+            object.__setattr__(self.config, "max_charge_rate", float(inputs["max_charge_rate"][0]))
+        if "storage_capacity" in inputs:
+            object.__setattr__(self.config, "max_capacity", float(inputs["storage_capacity"][0]))
+
+    def compute(self, inputs, outputs, discrete_inputs, discrete_outputs):
+        """Build the DR dispatch solver and write it to discrete outputs.
+
+        Args:
+            inputs (dict): OpenMDAO continuous inputs.
+            outputs (dict): OpenMDAO continuous outputs.
+            discrete_inputs (dict): OpenMDAO discrete inputs.
+            discrete_outputs (dict): OpenMDAO discrete outputs. The key
+                ``'pyomo_dispatch_solver'`` is set to the callable
+                returned by :meth:`pyomo_setup`.
+        """
+        discrete_outputs["pyomo_dispatch_solver"] = self.pyomo_setup(discrete_inputs)
+
+    def pyomo_setup(self, discrete_inputs):
+        """Return the rolling-horizon dispatch solver callable.
+
+        Args:
+            discrete_inputs (dict): OpenMDAO discrete inputs.
+
+        Returns:
+            callable: ``pyomo_dispatch_solver(performance_model,
+            performance_model_kwargs, inputs)`` that iterates over the
+            simulation in windows of ``n_control_window`` timesteps.
+            For each window it:
+
+            1. Builds a fresh MILP from the window's signal slice.
+            2. Solves the MILP with GLPK.
+            3. Calls ``performance_model`` with the resulting dispatch
+               commands.
+            4. Carries the terminal SOC into the next window.
+
+            Returns ``(storage_out, soc_out)`` - two ``np.ndarray`` of
+            length ``n_timesteps``.
+        """
+
+        def pyomo_dispatch_solver(
+            performance_model,
+            performance_model_kwargs,
+            inputs,
+            commodity_name=self.config.commodity,
+        ):
+            storage_out = np.zeros(self.n_timesteps)
+            soc_out = np.zeros(self.n_timesteps)
+
+            # Track events used per calendar month so the monthly cap is
+            # respected across window boundaries.
+            events_used_per_month = {}
+
+            n_w: int = int(self.config.n_control_window)
+            # Compute the starting index of each rolling window.
+            window_start_indices = list(range(0, self.n_timesteps, n_w))
+
+            for window_start in window_start_indices:
+                window_len: int = min(n_w, self.n_timesteps - window_start)
+                month_ids_w = self.month_ids[window_start : window_start + window_len]
+                # Since this is a rolling horizon, we need to compute the remaining budget
+                # for the  next optimization call
+                remaining_budget = {
+                    int(m): max(
+                        0,
+                        self.config.n_max_events
+                        - (events_used_per_month[int(m)] if int(m) in events_used_per_month else 0),
+                    )
+                    for m in np.unique(month_ids_w)
+                }
+                # Construct the MILP for this window
+                self.dr_model = self._build_dr_model(
+                    window_start=window_start,
+                    window_len=window_len,
+                    init_soc=self.updated_initial_soc,
+                    remaining_budget=remaining_budget,
+                )
+                self.problem_state = DispatchProblemState()
+
+                # Solve the optimzation problem
+                self.solve_dispatch_model(
+                    start_time=window_start,
+                    n_days=self.n_timesteps // 24,
+                )
+
+                # Count new discharge events to track the monthly cap.
+                for t in range(window_len):
+                    discharging = pyomo.value(self.dr_model.discharge[t]) > 0.5
+                    prev_discharging = t > 0 and pyomo.value(self.dr_model.discharge[t - 1]) > 0.5
+                    if discharging and not prev_discharging:
+                        month = int(month_ids_w[t])
+                        if month not in events_used_per_month:
+                            events_used_per_month[month] = 0
+                        events_used_per_month[month] += 1
+
+                # Run the performance model for this window.
+                storage_out_window, soc_window = performance_model(
+                    self.storage_dispatch_commands,
+                    **performance_model_kwargs,
+                    sim_start_index=window_start,
+                )
+
+                # Performance model returns SOC in percent.
+                self.updated_initial_soc = soc_window[-1] / 100.0
+
+                for j in range(window_len):
+                    storage_out[window_start + j] = storage_out_window[j]
+                    soc_out[window_start + j] = soc_window[j]
+
+            return storage_out, soc_out
+
+        return pyomo_dispatch_solver
+
     def _parse_peak_window(self) -> tuple:
         """Parse the ``peak_window`` config entry into ``datetime.time`` objects.
+
+        Accepts values either as ``HH:MM:SS`` strings or as plain integers
+        (seconds since midnight). PyYAML parses unquoted ``HH:MM:SS`` values
+        as sexagesimal integers, so both forms are equivalent in YAML.
 
         Returns:
             tuple[datetime.time, datetime.time]: ``(start, end)`` times.
 
         Raises:
             ValueError: If ``'start'`` or ``'end'`` keys are missing, or
-                if either value is not a string in ``HH:MM:SS`` format.
+                if a value is neither a valid ``HH:MM:SS`` string nor an integer.
         """
         pw = dict(self.config.peak_window)
         if "start" not in pw or "end" not in pw:
             raise ValueError("peak_window must contain 'start' and 'end' keys")
         for key in ("start", "end"):
             val = pw[key]
-            if not isinstance(val, str) or len(val.split(":")) != 3:
+            if isinstance(val, int | float):
+                total_seconds = int(val)
+                hours, remainder = divmod(total_seconds, 3600)
+                minutes, seconds = divmod(remainder, 60)
+                pw[key] = datetime.min.replace(hour=hours, minute=minutes, second=seconds).time()
+            elif isinstance(val, str) and len(val.split(":")) == 3:
+                pw[key] = datetime.strptime(val, "%H:%M:%S").time()
+            else:
                 raise ValueError(
-                    f"peak_window {key} value must be a string in HH:MM:SS format, got {val}."
+                    f"peak_window '{key}' must be HH:MM:SS string or integer seconds, got {val!r}."
                 )
-            pw[key] = datetime.strptime(val, "%H:%M:%S").time()
         return pw["start"], pw["end"]
 
     def _compute_peak_window_mask(self) -> np.ndarray:
@@ -328,113 +458,6 @@ class PeakLoadManagementOptimizedStorageController(PyomoStorageControllerBaseCla
             near_peak = np.abs(np.arange(len(eligible_mask)) - peak) <= half_event_steps
             event_mask |= near_peak
         return event_mask
-
-    def pyomo_setup(self, discrete_inputs):
-        """Return the rolling-horizon dispatch solver callable.
-
-        Args:
-            discrete_inputs (dict): OpenMDAO discrete inputs.
-
-        Returns:
-            callable: ``pyomo_dispatch_solver(performance_model,
-            performance_model_kwargs, inputs)`` that iterates over the
-            simulation in windows of ``n_control_window`` timesteps.
-            For each window it:
-
-            1. Builds a fresh MILP from the window's signal slice.
-            2. Solves the MILP with GLPK.
-            3. Calls ``performance_model`` with the resulting dispatch
-               commands.
-            4. Carries the terminal SOC into the next window.
-
-            Returns ``(storage_out, soc_out)`` - two ``np.ndarray`` of
-            length ``n_timesteps``.
-        """
-
-        def pyomo_dispatch_solver(
-            performance_model,
-            performance_model_kwargs,
-            inputs,
-            commodity_name=self.config.commodity,
-        ):
-            storage_out = np.zeros(self.n_timesteps)
-            soc_out = np.zeros(self.n_timesteps)
-
-            # Track events used per calendar month so the monthly cap is
-            # respected across window boundaries.
-            events_used_per_month = {}
-
-            n_w: int = int(self.config.n_control_window)
-            # Compute the starting index of each rolling window.
-            window_start_indices = list(range(0, self.n_timesteps, n_w))
-
-            for window_start in window_start_indices:
-                window_len: int = min(n_w, self.n_timesteps - window_start)
-                month_ids_w = self.month_ids[window_start : window_start + window_len]
-                # Since this is a rolling horizon, we need to compute the remaining budget
-                # for the  next optimization call
-                remaining_budget = {
-                    int(m): max(
-                        0,
-                        self.config.n_max_events
-                        - (events_used_per_month[int(m)] if int(m) in events_used_per_month else 0),
-                    )
-                    for m in np.unique(month_ids_w)
-                }
-                # Construct the MILP for this window
-                self.dr_model = self._build_dr_model(
-                    window_start=window_start,
-                    window_len=window_len,
-                    init_soc=self.updated_initial_soc,
-                    remaining_budget=remaining_budget,
-                )
-                self.problem_state = DispatchProblemState()
-
-                # Solve the optimzation problem
-                self.solve_dispatch_model(
-                    start_time=window_start,
-                    n_days=self.n_timesteps // 24,
-                )
-
-                # Count new discharge events to track the monthly cap.
-                for t in range(window_len):
-                    discharging = pyomo.value(self.dr_model.discharge[t]) > 0.5
-                    prev_discharging = t > 0 and pyomo.value(self.dr_model.discharge[t - 1]) > 0.5
-                    if discharging and not prev_discharging:
-                        month = int(month_ids_w[t])
-                        if month not in events_used_per_month:
-                            events_used_per_month[month] = 0
-                        events_used_per_month[month] += 1
-
-                # Run the performance model for this window.
-                storage_out_window, soc_window = performance_model(
-                    self.storage_dispatch_commands,
-                    **performance_model_kwargs,
-                    sim_start_index=window_start,
-                )
-
-                # Performance model returns SOC in percent.
-                self.updated_initial_soc = soc_window[-1] / 100.0
-
-                for j in range(window_len):
-                    storage_out[window_start + j] = storage_out_window[j]
-                    soc_out[window_start + j] = soc_window[j]
-
-            return storage_out, soc_out
-
-        return pyomo_dispatch_solver
-
-    def initialize_parameters(self, inputs):
-        """Sync OpenMDAO inputs into the config.
-
-        Args:
-            inputs (dict): OpenMDAO inputs dict. Recognized keys are
-                ``'max_charge_rate'`` and ``'storage_capacity'``.
-        """
-        if "max_charge_rate" in inputs:
-            object.__setattr__(self.config, "max_charge_rate", float(inputs["max_charge_rate"][0]))
-        if "storage_capacity" in inputs:
-            object.__setattr__(self.config, "max_capacity", float(inputs["storage_capacity"][0]))
 
     def _build_dr_model(
         self,
@@ -611,19 +634,6 @@ class PeakLoadManagementOptimizedStorageController(PyomoStorageControllerBaseCla
             n_days,
             pyomo.value(self.dr_model.objective),
         )
-
-    def compute(self, inputs, outputs, discrete_inputs, discrete_outputs):
-        """Build the DR dispatch solver and write it to discrete outputs.
-
-        Args:
-            inputs (dict): OpenMDAO continuous inputs.
-            outputs (dict): OpenMDAO continuous outputs.
-            discrete_inputs (dict): OpenMDAO discrete inputs.
-            discrete_outputs (dict): OpenMDAO discrete outputs. The key
-                ``'pyomo_dispatch_solver'`` is set to the callable
-                returned by :meth:`pyomo_setup`.
-        """
-        discrete_outputs["pyomo_dispatch_solver"] = self.pyomo_setup(discrete_inputs)
 
     @staticmethod
     def glpk_solve_call(
