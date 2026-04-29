@@ -2,7 +2,7 @@
 
 This example demonstrates demand-response storage dispatch using a rolling-horizon
 MILP controller. The battery is scheduled to discharge during high-LMP peak hours
-to reduce facility demand charges and earn performance incentives.
+to maximize incentives.
 """
 
 from pathlib import Path
@@ -76,7 +76,6 @@ time_window = min(n_timesteps, int(14 * 24 * 3600 / dt_seconds))  # 14 days
 
 def shade_peaks(ax):
     for day in days:
-        # light background: static peak_window
         ax.axvspan(
             day + pd.Timedelta(hours=pw_start_h),
             day + pd.Timedelta(hours=pw_end_h),
@@ -87,7 +86,6 @@ def shade_peaks(ax):
         )
         if half_td is None:
             continue
-        # darker band: event window centered on the daily LMP peak
         pw_start_ts = day + pd.Timedelta(hours=pw_start_h)
         pw_end_ts = day + pd.Timedelta(hours=pw_end_h)
         in_pw = (time_index >= pw_start_ts) & (time_index <= pw_end_ts)
