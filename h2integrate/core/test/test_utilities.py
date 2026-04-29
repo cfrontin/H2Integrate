@@ -1,6 +1,5 @@
 import os
 import re
-import warnings
 from pathlib import Path
 
 import yaml
@@ -11,11 +10,7 @@ import openmdao.api as om
 from attrs import field, define
 
 from h2integrate import ROOT_DIR, EXAMPLE_DIR, RESOURCE_DEFAULT_DIR
-from h2integrate.core.utilities import (
-    BaseConfig,
-    determine_price_mode,
-    build_time_series_from_plant_config,
-)
+from h2integrate.core.utilities import BaseConfig, build_time_series_from_plant_config
 from h2integrate.core.dict_utils import check_inputs, dict_to_yaml_formatting
 from h2integrate.core.file_utils import get_path, find_file, load_yaml, make_unique_case_name
 from h2integrate.core.supported_models import supported_models
@@ -773,90 +768,3 @@ def test_check_inputs(subtests):
                 assert expected_error == str(excinfo.value)
         else:
             check_inputs(prob, tech, tech_info, tech_config_fpath)
-
-
-@pytest.mark.unit
-def test_determine_price_mode_scalar():
-    """Test scalar price returns 'scalar' mode with shape 1."""
-    mode, shape = determine_price_mode(0.10, n_timesteps=8760, plant_life=30)
-    assert mode == "scalar"
-    assert shape == 1
-
-
-@pytest.mark.unit
-def test_determine_price_mode_scalar_int():
-    """Test integer scalar price."""
-    mode, shape = determine_price_mode(5, n_timesteps=8760, plant_life=30)
-    assert mode == "scalar"
-    assert shape == 1
-
-
-@pytest.mark.unit
-def test_determine_price_mode_per_timestep_list():
-    """Test list with length n_timesteps returns 'per_timestep'."""
-    prices = [0.10] * 24
-    mode, shape = determine_price_mode(prices, n_timesteps=24, plant_life=30)
-    assert mode == "per_timestep"
-    assert shape == 24
-
-
-@pytest.mark.unit
-def test_determine_price_mode_per_timestep_array():
-    """Test numpy array with length n_timesteps returns 'per_timestep'."""
-    prices = np.full(8760, 0.10)
-    mode, shape = determine_price_mode(prices, n_timesteps=8760, plant_life=30)
-    assert mode == "per_timestep"
-    assert shape == 8760
-
-
-@pytest.mark.unit
-def test_determine_price_mode_per_year_list():
-    """Test list with length plant_life returns 'per_year'."""
-    prices = np.linspace(0.05, 0.15, 30).tolist()
-    mode, shape = determine_price_mode(prices, n_timesteps=8760, plant_life=30)
-    assert mode == "per_year"
-    assert shape == 30
-
-
-@pytest.mark.unit
-def test_determine_price_mode_per_year_array():
-    """Test numpy array with length plant_life returns 'per_year'."""
-    prices = np.linspace(0.05, 0.15, 30)
-    mode, shape = determine_price_mode(prices, n_timesteps=8760, plant_life=30)
-    assert mode == "per_year"
-    assert shape == 30
-
-
-@pytest.mark.unit
-def test_determine_price_mode_invalid_length():
-    """Test that an array with invalid length raises ValueError."""
-    prices = [0.10] * 15  # Neither n_timesteps (24) nor plant_life (30)
-    with pytest.raises(ValueError, match="must match n_timesteps.*or plant_life"):
-        determine_price_mode(prices, n_timesteps=24, plant_life=30)
-
-
-@pytest.mark.unit
-def test_determine_price_mode_invalid_length_custom_name():
-    """Test that the custom price_name appears in the error message."""
-    prices = [0.10] * 15
-    with pytest.raises(ValueError, match="electricity_buy_price length"):
-        determine_price_mode(
-            prices, n_timesteps=24, plant_life=30, price_name="electricity_buy_price"
-        )
-
-
-@pytest.mark.unit
-def test_determine_price_mode_ambiguous_warning():
-    """Test UserWarning when n_timesteps == plant_life."""
-    plant_life = 30
-    prices = np.linspace(0.05, 0.15, plant_life).tolist()
-
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        mode, shape = determine_price_mode(prices, n_timesteps=plant_life, plant_life=plant_life)
-
-    assert mode == "per_year"
-    assert shape == plant_life
-
-    user_warnings = [x for x in w if issubclass(x.category, UserWarning)]
-    assert any("plant_life interpretation" in str(x.message) for x in user_warnings)

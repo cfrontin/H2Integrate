@@ -2,7 +2,7 @@ import numpy as np
 import openmdao.api as om
 from attrs import field, define
 
-from h2integrate.core.utilities import BaseConfig, merge_shared_inputs, determine_price_mode
+from h2integrate.core.utilities import BaseConfig, merge_shared_inputs
 from h2integrate.core.model_baseclasses import CostModelBaseClass, CostModelBaseConfig
 
 
@@ -119,10 +119,21 @@ class FeedstockCostModel(CostModelBaseClass):
             units=self.config.commodity_rate_units,
         )
 
-        # Determine price mode (scalar, per-timestep, or per-year)
-        self._price_mode, price_shape = determine_price_mode(
-            self.config.price, self.n_timesteps, plant_life, price_name="price"
-        )
+        # Determine price mode from array length
+        if isinstance(self.config.price, list | np.ndarray):
+            price_len = len(self.config.price)
+            if price_len == plant_life:
+                self._price_mode = "per_year"
+            elif price_len == self.n_timesteps:
+                self._price_mode = "per_timestep"
+            else:
+                raise ValueError(
+                    f"price length ({price_len}) "
+                    f"must match n_timesteps ({self.n_timesteps}) "
+                    f"or plant_life ({plant_life})"
+                )
+        else:
+            self._price_mode = "scalar"
 
         self.add_input(
             "price",

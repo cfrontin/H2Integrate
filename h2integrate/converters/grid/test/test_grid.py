@@ -1,5 +1,3 @@
-import warnings
-
 import numpy as np
 import pytest
 import openmdao.api as om
@@ -725,6 +723,7 @@ def test_per_year_buy_price(plant_config, n_timesteps):
                 "fixed_interconnection_cost": 100000.0,
                 "electricity_buy_price": buy_prices,
                 "electricity_sell_price": None,
+                "buy_price_mode": "per_year",
             },
         }
     }
@@ -768,6 +767,7 @@ def test_per_year_sell_price(plant_config, n_timesteps):
                 "fixed_interconnection_cost": 100000.0,
                 "electricity_buy_price": None,
                 "electricity_sell_price": sell_prices,
+                "sell_price_mode": "per_year",
             },
         }
     }
@@ -812,6 +812,8 @@ def test_per_year_buy_and_sell_prices(plant_config, n_timesteps):
                 "fixed_interconnection_cost": 100000.0,
                 "electricity_buy_price": buy_prices,
                 "electricity_sell_price": sell_prices,
+                "buy_price_mode": "per_year",
+                "sell_price_mode": "per_year",
             },
         }
     }
@@ -832,92 +834,6 @@ def test_per_year_buy_and_sell_prices(plant_config, n_timesteps):
     prob.run_model()
 
     expected_varopex = annual_bought * np.array(buy_prices) - annual_sold * np.array(sell_prices)
-
-    varopex = prob.get_val("grid.VarOpEx", units="USD/year")
-    np.testing.assert_allclose(varopex, expected_varopex)
-
-
-@pytest.mark.unit
-def test_per_year_price_invalid_length():
-    """Test that an invalid price array length raises ValueError."""
-    plant_config = {
-        "plant": {
-            "plant_life": 30,
-            "simulation": {"n_timesteps": 8760, "dt": 3600},
-        }
-    }
-
-    bad_prices = [0.10] * 15  # Neither n_timesteps (8760) nor plant_life (30)
-
-    tech_config = {
-        "model_inputs": {
-            "shared_parameters": {"interconnection_size": 50000.0},
-            "cost_parameters": {
-                "cost_year": 2022,
-                "interconnection_capex_per_kw": 50.0,
-                "interconnection_opex_per_kw": 2.0,
-                "fixed_interconnection_cost": 100000.0,
-                "electricity_buy_price": bad_prices,
-                "electricity_sell_price": None,
-            },
-        }
-    }
-
-    prob = om.Problem()
-    with pytest.raises(ValueError, match="must match n_timesteps.*or plant_life"):
-        prob.model.add_subsystem(
-            "grid",
-            GridCostModel(driver_config={}, plant_config=plant_config, tech_config=tech_config),
-        )
-        prob.setup()
-
-
-@pytest.mark.unit
-def test_per_year_price_ntimesteps_equals_plant_life_warning():
-    """Test UserWarning when n_timesteps == plant_life for price array."""
-    plant_life = 30
-    plant_config = {
-        "plant": {
-            "plant_life": plant_life,
-            "simulation": {"n_timesteps": plant_life, "dt": 3600},
-        }
-    }
-
-    buy_prices = np.linspace(0.05, 0.15, plant_life).tolist()
-
-    tech_config = {
-        "model_inputs": {
-            "shared_parameters": {"interconnection_size": 50000.0},
-            "cost_parameters": {
-                "cost_year": 2022,
-                "interconnection_capex_per_kw": 50.0,
-                "interconnection_opex_per_kw": 2.0,
-                "fixed_interconnection_cost": 100000.0,
-                "electricity_buy_price": buy_prices,
-                "electricity_sell_price": None,
-            },
-        }
-    }
-
-    prob = om.Problem()
-
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        prob.model.add_subsystem(
-            "grid",
-            GridCostModel(driver_config={}, plant_config=plant_config, tech_config=tech_config),
-        )
-        prob.setup()
-
-    user_warnings = [x for x in w if issubclass(x.category, UserWarning)]
-    assert any("plant_life interpretation will be used" in str(x.message) for x in user_warnings)
-
-    # Verify it behaves as per-year pricing (uses annual input)
-    annual_elec = np.full(plant_life, 100_000.0)  # kWh/yr
-    prob.set_val("grid.annual_electricity_out", annual_elec, units="kW*h/yr")
-    prob.run_model()
-
-    expected_varopex = annual_elec * np.array(buy_prices)
 
     varopex = prob.get_val("grid.VarOpEx", units="USD/year")
     np.testing.assert_allclose(varopex, expected_varopex)

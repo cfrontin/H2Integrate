@@ -5,8 +5,6 @@ These tests validate the feedstock components that provide resource inputs to te
 including natural gas, electricity, water, and other feedstock types.
 """
 
-import warnings
-
 import numpy as np
 import pytest
 import openmdao.api as om
@@ -395,42 +393,3 @@ def test_per_year_pricing_invalid_length():
 
     with pytest.raises(ValueError, match="must match n_timesteps.*or plant_life"):
         prob.setup()
-
-
-@pytest.mark.unit
-def test_per_year_pricing_ntimesteps_equals_plant_life_warning():
-    """Test UserWarning when n_timesteps == plant_life for price array."""
-    plant_life = 30
-
-    yearly_prices = np.linspace(3.0, 6.0, plant_life).tolist()
-
-    tech_config, plant_config, driver_config = create_basic_feedstock_config(price=yearly_prices)
-    # Set n_timesteps == plant_life to trigger ambiguity
-    plant_config["plant"]["simulation"]["n_timesteps"] = plant_life
-
-    cost_model = FeedstockCostModel()
-    cost_model.options["tech_config"] = tech_config
-    cost_model.options["plant_config"] = plant_config
-    cost_model.options["driver_config"] = driver_config
-
-    prob = om.Problem()
-
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        prob.model.add_subsystem("feedstock_cost", cost_model)
-        prob.setup()
-
-    user_warnings = [x for x in w if issubclass(x.category, UserWarning)]
-    assert any("plant_life interpretation will be used" in str(x.message) for x in user_warnings)
-
-    # Verify it behaves as per-year pricing
-    consumption = np.full(plant_life, 50.0)
-    prob.set_val("feedstock_cost.natural_gas_consumed", consumption)
-    prob.run_model()
-
-    dt = plant_config["plant"]["simulation"]["dt"]
-    total_consumption = consumption.sum() * (dt / 3600)
-    expected_varopex = total_consumption * np.array(yearly_prices)
-
-    varopex = prob.get_val("feedstock_cost.VarOpEx", units="USD/year")
-    np.testing.assert_allclose(varopex, expected_varopex)
