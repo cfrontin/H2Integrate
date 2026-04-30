@@ -211,13 +211,16 @@ class PeakLoadManagementOptimizedStorageController(PyomoStorageControllerBaseCla
                 ``'pyomo_dispatch_solver'`` is set to the callable
                 returned by :meth:`pyomo_setup`.
         """
-        discrete_outputs["pyomo_dispatch_solver"] = self.pyomo_setup(discrete_inputs)
+        discrete_outputs["pyomo_dispatch_solver"] = self.pyomo_setup(discrete_inputs, inputs)
 
-    def pyomo_setup(self, discrete_inputs):
+    def pyomo_setup(self, discrete_inputs, om_inputs):
         """Return the rolling-horizon dispatch solver callable.
 
         Args:
             discrete_inputs (dict): OpenMDAO discrete inputs.
+            om_inputs (dict): OpenMDAO continuous inputs. ``max_charge_rate``
+                and ``storage_capacity`` are read from here so that optimizer
+                changes to those values are reflected in each solve.
 
         Returns:
             callable: ``pyomo_dispatch_solver(performance_model,
@@ -234,6 +237,9 @@ class PeakLoadManagementOptimizedStorageController(PyomoStorageControllerBaseCla
             Returns ``(storage_out, soc_out)`` - two ``np.ndarray`` of
             length ``n_timesteps``.
         """
+
+        P_max = float(om_inputs["max_charge_rate"][0])
+        storage_capacity = float(om_inputs["storage_capacity"][0])
 
         def pyomo_dispatch_solver(
             performance_model,
@@ -271,6 +277,8 @@ class PeakLoadManagementOptimizedStorageController(PyomoStorageControllerBaseCla
                     window_len=window_len,
                     init_soc=self.updated_initial_soc,
                     remaining_budget=remaining_budget,
+                    P_max=P_max,
+                    storage_capacity=storage_capacity,
                 )
                 self.problem_state = DispatchProblemState()
 
@@ -292,7 +300,7 @@ class PeakLoadManagementOptimizedStorageController(PyomoStorageControllerBaseCla
 
                 # Run the performance model for this window.
                 storage_out_window, soc_window = performance_model(
-                    self.storage_dispatch_commands,
+                    self._get_storage_dispatch_commands(P_max),
                     **performance_model_kwargs,
                     sim_start_index=window_start,
                 )
@@ -465,6 +473,8 @@ class PeakLoadManagementOptimizedStorageController(PyomoStorageControllerBaseCla
         window_len: int,
         init_soc: float,
         remaining_budget: dict,
+        P_max: float,
+        storage_capacity: float,
     ) -> pyomo.ConcreteModel:
         """Build the DR MILP for a single rolling window.
 
@@ -479,16 +489,17 @@ class PeakLoadManagementOptimizedStorageController(PyomoStorageControllerBaseCla
                 subtracting events already dispatched in earlier windows
                 from ``n_max_events``, so the monthly cap is respected
                 across windows.
+            P_max (float): Maximum charge/discharge rate (kW), taken
+                from OpenMDAO inputs so optimizer changes are reflected.
+            storage_capacity (float): Total storage capacity (kWh), taken
+                from OpenMDAO inputs so optimizer changes are reflected.
 
         Returns:
             pyomo.ConcreteModel: Fully formed MILP ready to solve.
         """
         m: Any = pyomo.ConcreteModel(name="plm_dr")
 
-        P_max = self.config.max_charge_rate
-        E_max = self.config.max_capacity * (
-            self.config.max_soc_fraction - self.config.min_soc_fraction
-        )
+        E_max = storage_capacity * (self.config.max_soc_fraction - self.config.min_soc_fraction)
         eta_c = self.config.charge_efficiency
         eta_d = self.config.discharge_efficiency
         soc_max = self.config.max_soc_fraction
@@ -659,15 +670,16 @@ class PeakLoadManagementOptimizedStorageController(PyomoStorageControllerBaseCla
             results = solver.solve(pyomo_model, options=solver_options.constructed, tee=False)
         return results
 
-    @property
-    def storage_dispatch_commands(self) -> list:
+    def _get_storage_dispatch_commands(self, P_max: float) -> list:
         """Net dispatch commands for the solved window.
+
+        Args:
+            P_max (float): Maximum charge/discharge rate (kW).
 
         Returns:
             list[float]: ``(u_t - v_t) * P_max`` for each timestep in
             the solved window. Positive = discharge, negative = charge.
         """
-        P_max = self.config.max_charge_rate
         return [
             (pyomo.value(self.dr_model.discharge[t]) - pyomo.value(self.dr_model.charge[t])) * P_max
             for t in self.dr_model.T

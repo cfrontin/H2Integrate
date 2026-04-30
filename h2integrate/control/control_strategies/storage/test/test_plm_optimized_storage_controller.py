@@ -171,6 +171,8 @@ def test_optimizer_dispatch_only_in_peak_window(base_config):
         window_len=24,
         init_soc=base_config.init_soc_fraction,
         remaining_budget={1: base_config.n_max_events},
+        P_max=base_config.max_charge_rate,
+        storage_capacity=base_config.max_capacity,
     )
 
     PeakLoadManagementOptimizedStorageController.glpk_solve_call(model)
@@ -181,7 +183,7 @@ def test_optimizer_dispatch_only_in_peak_window(base_config):
         hour = pd.Timestamp("2024-01-01") + pd.Timedelta(hours=t)
         in_window = peak_start <= hour.time() <= peak_end
         if not in_window:
-            assert pyomo.value(model.discharge[t]) < 1e-3
+            assert pyomo.value(model.discharge[t]) < 1e-3  # type: ignore[index]
 
 
 @pytest.mark.regression
@@ -193,6 +195,8 @@ def test_optimizer_dispatch_only_on_eligible_timesteps(base_config):
         window_len=24,
         init_soc=base_config.init_soc_fraction,
         remaining_budget={1: base_config.n_max_events},
+        P_max=base_config.max_charge_rate,
+        storage_capacity=base_config.max_capacity,
     )
 
     PeakLoadManagementOptimizedStorageController.glpk_solve_call(model)
@@ -201,7 +205,7 @@ def test_optimizer_dispatch_only_on_eligible_timesteps(base_config):
     eligible_mask = controller._compute_eligible_mask(signal)
     for t in range(24):
         if not eligible_mask[t]:
-            assert pyomo.value(model.discharge[t]) < 1e-3
+            assert pyomo.value(model.discharge[t]) < 1e-3  # type: ignore[index]
 
 
 @pytest.mark.regression
@@ -213,11 +217,13 @@ def test_optimizer_dispatch_respects_event_budget(base_config):
         window_len=24,
         init_soc=base_config.init_soc_fraction,
         remaining_budget={1: base_config.n_max_events},
+        P_max=base_config.max_charge_rate,
+        storage_capacity=base_config.max_capacity,
     )
 
     PeakLoadManagementOptimizedStorageController.glpk_solve_call(model)
 
-    total_events = sum(pyomo.value(model.discharge[t]) for t in range(24))
+    total_events = sum(pyomo.value(model.discharge[t]) for t in range(24))  # type: ignore[index]
     assert total_events <= base_config.n_max_events + 1e-3
 
 
@@ -230,14 +236,16 @@ def test_optimizer_dispatch_respects_soc_constraints(base_config):
         window_len=24,
         init_soc=base_config.init_soc_fraction,
         remaining_budget={2: base_config.n_max_events},
+        P_max=base_config.max_charge_rate,
+        storage_capacity=base_config.max_capacity,
     )
 
     PeakLoadManagementOptimizedStorageController.glpk_solve_call(model)
 
     soc = base_config.init_soc_fraction * base_config.max_capacity
     for t in range(24):
-        charge = pyomo.value(model.charge[t])
-        discharge = pyomo.value(model.discharge[t])
+        charge = pyomo.value(model.charge[t])  # type: ignore[index]
+        discharge = pyomo.value(model.discharge[t])  # type: ignore[index]
         soc += charge - discharge
         assert soc >= base_config.min_soc_fraction * base_config.max_capacity
         assert soc <= base_config.max_soc_fraction * base_config.max_capacity
@@ -297,11 +305,13 @@ def test_optimizer_dispatch_respects_charge_discharge_exclusivity(base_config):
         window_len=24,
         init_soc=base_config.init_soc_fraction,
         remaining_budget={2: base_config.n_max_events},
+        P_max=base_config.max_charge_rate,
+        storage_capacity=base_config.max_capacity,
     )
 
     PeakLoadManagementOptimizedStorageController.glpk_solve_call(model)
 
     for t in range(24):
-        charge = pyomo.value(model.charge[t])
-        discharge = pyomo.value(model.discharge[t])
+        charge = pyomo.value(model.charge[t])  # type: ignore[index]
+        discharge = pyomo.value(model.discharge[t])  # type: ignore[index]
         assert not (charge > 0.5 and discharge > 0.5)
