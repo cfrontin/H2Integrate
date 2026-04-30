@@ -30,7 +30,7 @@ technologies:
         performance_incentive: 14.0  # $/kWh
         n_max_events: 10  # maximum discharge events per month
         signal_threshold_percentile: 95.0  # only dispatch when LMP >= this percentile
-        n_control_window: 24  # hours; converted to timesteps using simulation dt
+        n_control_window_hours: 24  # hours; converted to timesteps using simulation dt
         event_duration:  # omit or set to null to use static peak_window
           units: h  # any pandas timedelta unit: h, min, s,
           val: 4  # battery eligible +/ - val h around the daily peak

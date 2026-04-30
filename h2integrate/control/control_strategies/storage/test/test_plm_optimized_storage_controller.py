@@ -50,7 +50,7 @@ def base_config():
         max_soc_fraction=1.0,
         min_soc_fraction=0.0,
         init_soc_fraction=1.0,
-        n_control_window=n,
+        n_control_window_hours=n,
         commodity="electricity",
         commodity_rate_units="kW",
         tech_name="battery",

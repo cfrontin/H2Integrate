@@ -23,7 +23,7 @@ class PeakLoadManagementOptimizedControllerConfig(PyomoStorageControllerBaseConf
 
     Inherits base fields from ``PyomoStorageControllerBaseConfig``:
     ``max_capacity``, ``max_soc_fraction``, ``min_soc_fraction``,
-    ``init_soc_fraction``, ``n_control_window``, ``commodity``,
+    ``init_soc_fraction``, ``n_control_window_hours``, ``commodity``,
     ``commodity_rate_units``, ``tech_name``,
     ``system_commodity_interface_limit``, ``round_digits``.
 
@@ -31,7 +31,7 @@ class PeakLoadManagementOptimizedControllerConfig(PyomoStorageControllerBaseConf
         max_charge_rate (float): Maximum charge and discharge rate (kW).
         supervisory_signal (list[float]): Price, demand, or price*demand
             forecast time series. The rolling horizon solver uses one window of
-            length ``n_control_window`` per solve.
+            length ``n_control_window_hours`` per solve.
         peak_window (dict): Hours eligible for dispatch. Keys ``'start'``
             and ``'end'`` must be strings in ``HH:MM:SS`` format.
         performance_incentive (float): Incentive revenue in $/kWh.
@@ -41,7 +41,7 @@ class PeakLoadManagementOptimizedControllerConfig(PyomoStorageControllerBaseConf
             Defaults to 1.0.
         n_max_events (int): Maximum discharge events per calendar month.
             Defaults to 10.
-        n_control_window (float): Rolling window size in **hours**.
+        n_control_window_hours (float): Rolling window size in **hours**.
             Converted to an integer timestep count during ``setup()``
             using the simulation ``dt``, so the same value works at any
             resolution. Example: ``10`` at a 30-min ``dt`` gives a
@@ -74,14 +74,14 @@ class PeakLoadManagementOptimizedControllerConfig(PyomoStorageControllerBaseConf
     charge_efficiency: float = field(validator=range_val(0, 1), default=1.0)
     discharge_efficiency: float = field(validator=range_val(0, 1), default=1.0)
     n_max_events: int = field(default=10)
-    n_control_window: float = field(default=24.0)
+    n_control_window_hours: float = field(default=24.0)
     signal_threshold_percentile: float = field(default=0.0, validator=range_val(0, 100))
     event_duration: dict = field(default=None)
     min_peak_separation: dict = field(default=None)
 
     def __attrs_post_init__(self):
-        # Make sure n_control_window is an int
-        self.n_control_window = int(round(self.n_control_window))
+        # Make sure n_control_window_hours is an int
+        self.n_control_window_hours = int(round(self.n_control_window_hours))
         super().__attrs_post_init__()
 
         for field_name, value in (
@@ -107,7 +107,7 @@ class PeakLoadManagementOptimizedStorageController(PyomoStorageControllerBaseCla
     """Demand-response storage controller using a rolling-horizon MILP.
 
     Each call to the dispatch solver iterates over the full simulation in
-    windows of length ``n_control_window``. For each window it receives
+    windows of length ``n_control_window_hours``. For each window it receives
     the monthly LMP forecast, solves the MILP to maximize incentive
     revenue, then passes the resulting dispatch commands to the
     performance model. The terminal SOC of each window is carried forward
@@ -145,9 +145,9 @@ class PeakLoadManagementOptimizedStorageController(PyomoStorageControllerBaseCla
         self.n_timesteps = int(sim["n_timesteps"])  # number of "dt"s in the simulation
         self.dt_seconds = int(sim["dt"])  # length of each timestep in seconds
 
-        # n_control_window is stored in hours; convert to timesteps now that dt is known.
-        n_cw_steps = max(1, int(round(self.config.n_control_window * 3600 / self.dt_seconds)))
-        object.__setattr__(self.config, "n_control_window", n_cw_steps)
+        # n_control_window_hours is stored in hours; convert to timesteps now that dt is known.
+        n_cw_steps = max(1, int(round(self.config.n_control_window_hours * 3600 / self.dt_seconds)))
+        object.__setattr__(self.config, "n_control_window_hours", n_cw_steps)
 
         super().setup()
 
@@ -225,7 +225,7 @@ class PeakLoadManagementOptimizedStorageController(PyomoStorageControllerBaseCla
         Returns:
             callable: ``pyomo_dispatch_solver(performance_model,
             performance_model_kwargs, inputs)`` that iterates over the
-            simulation in windows of ``n_control_window`` timesteps.
+            simulation in windows of ``n_control_window_hours`` timesteps.
             For each window it:
 
             1. Builds a fresh MILP from the window's signal slice.
@@ -254,7 +254,7 @@ class PeakLoadManagementOptimizedStorageController(PyomoStorageControllerBaseCla
             # respected across window boundaries.
             events_used_per_month = {}
 
-            n_w: int = int(self.config.n_control_window)
+            n_w: int = int(self.config.n_control_window_hours)
             # Compute the starting index of each rolling window.
             window_start_indices = list(range(0, self.n_timesteps, n_w))
 
