@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+from h2integrate.core.utilities import build_time_series_from_plant_config
 from h2integrate.core.h2integrate_model import H2IntegrateModel
 
 
@@ -19,6 +20,7 @@ EXAMPLE_DIR = Path(__file__).parent
 
 model = H2IntegrateModel(EXAMPLE_DIR / "34_plm_optimized_dispatch.yaml")
 model.setup()
+
 
 N = model.plant_config["plant"]["simulation"]["n_timesteps"]
 percentile = model.technology_config["technologies"]["battery"]["model_inputs"][
@@ -33,32 +35,22 @@ lmp = np.array(
     ]
 )[:N]
 
-sim = model.plant_config["plant"]["simulation"]
-n_timesteps = int(sim["n_timesteps"])
-dt_seconds = int(sim["dt"])
-tz = int(sim["timezone"])
-start = pd.Timestamp(sim["start_time"], tz=tz)
-freq = pd.to_timedelta(dt_seconds, unit="s")
-time_index = pd.date_range(start=start, periods=n_timesteps, freq=freq)
+n_timesteps = int(model.plant_config["plant"]["simulation"]["n_timesteps"])
+dt_seconds = int(model.plant_config["plant"]["simulation"]["dt"])
+time_index = pd.DatetimeIndex(build_time_series_from_plant_config(model.plant_config))
 
 battery_power = model.prob.get_val("battery.storage_electricity_discharge", units="kW")
 soc_pct = model.prob.get_val("battery.SOC", units="percent")
 
+controller = model.control_strategies[0]
+pw_start, pw_end = controller._parse_peak_window()
+pw_start_h = pw_start.hour
+pw_end_h = pw_end.hour
+
 control_params = model.technology_config["technologies"]["battery"]["model_inputs"][
     "control_parameters"
 ]
-pw_cfg = control_params["peak_window"]
 event_dur_cfg = control_params.get("event_duration")
-
-
-def _peak_window_to_hour(val) -> int:
-    if isinstance(val, int | float):
-        return int(val) // 3600
-    return int(str(val).split(":")[0])
-
-
-pw_start_h = _peak_window_to_hour(pw_cfg["start"])
-pw_end_h = _peak_window_to_hour(pw_cfg["end"])
 
 half_td = None
 if event_dur_cfg is not None:
