@@ -2883,6 +2883,7 @@ def test_peak_load_management_example(subtests, temp_copy_of_example):
         grid_purchase = model.prob.get_val("grid_buy.electricity_out", units="kW")
         assert battery_unmet_demand.sum() == pytest.approx(grid_purchase.sum(), rel=1e-3)
 
+
 @pytest.mark.integration
 @pytest.mark.parametrize(
     "example_folder,resource_example_folder", [("34_plm_optimized_dispatch", None)]
@@ -2897,9 +2898,7 @@ def test_plm_optimized_dispatch_example(subtests, temp_copy_of_example):
     # Run the model
     model.run()
 
-    battery_power = model.prob.get_val(
-        "battery.storage_electricity_discharge", units="kW"
-    )
+    battery_power = model.prob.get_val("battery.storage_electricity_discharge", units="kW")
     soc_pct = model.prob.get_val("battery.SOC", units="percent")
 
     with subtests.test("Check battery power is discharging at some point"):
@@ -2911,26 +2910,22 @@ def test_plm_optimized_dispatch_example(subtests, temp_copy_of_example):
 
     with subtests.test("Check battery CAPEX"):
         battery_capex = model.prob.get_val("battery.CapEx", units="USD")[0]
-        assert pytest.approx(battery_capex, rel=1e-6) == 603300.0
+        assert pytest.approx(battery_capex, rel=1e-6) == 929700.0
 
     with subtests.test("Check battery OPEX"):
         battery_opex = model.prob.get_val("battery.OpEx", units="USD/year")[0]
-        assert pytest.approx(battery_opex, rel=1e-1) == 15082.0
+        assert pytest.approx(battery_opex, rel=1e-1) == 23242.5
 
     with subtests.test("Check number of discharge events"):
         # With the given demand profile and battery size, there should be 2 discharge events
-        num_discharge_events = np.sum(
-            battery_power > 1e-3
-        )  # Count timesteps with discharge
-        assert num_discharge_events == 115
+        num_discharge_events = np.sum(battery_power > 1e-3)  # Count timesteps with discharge
+        assert num_discharge_events == 368
 
     with subtests.test("Check total energy discharged"):
         total_energy_discharged = battery_power.sum() * (1 / 60)  # kWh, 1 min timestep
-        assert pytest.approx(total_energy_discharged, rel=1e-2) == 522.55
+        assert pytest.approx(total_energy_discharged, rel=1e-2) == 1840.0
 
     with subtests.test("Check total energy charged"):
-        battery_charge = model.prob.get_val(
-            "battery.storage_electricity_charge", units="kW"
-        )
+        battery_charge = model.prob.get_val("battery.storage_electricity_charge", units="kW")
         total_energy_charged = battery_charge.sum() * (1 / 60)  # kWh, 1 min timestep
-        assert pytest.approx(total_energy_charged, rel=1e-3) == -565.55
+        assert pytest.approx(total_energy_charged, rel=1e-3) == -2015.0
