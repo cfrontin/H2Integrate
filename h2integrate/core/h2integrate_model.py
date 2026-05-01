@@ -87,7 +87,7 @@ class H2IntegrateModel:
         self.create_driver_model()
 
         # create technology connection graph
-        G = self._create_technology_graph()
+        G = self.create_technology_graph()
         # Define the commodities produced by each technology from technology_interconnections
         # Each element of the set is a tuple of (source_tech, commodity_produced)
         self.techs_to_commodities = {
@@ -1348,7 +1348,7 @@ class H2IntegrateModel:
         # Check if there are any loops in the technology interconnections
         # If loops are present, add solvers to resolve the coupling
         # Create a directed graph from the technology interconnections
-        G = self._create_technology_graph()
+        G = self.create_technology_graph()
 
         # Check if there are any cycles (loops) in the graph
         if list(nx.simple_cycles(G)):
@@ -1678,7 +1678,7 @@ class H2IntegrateModel:
 
         return list(tech_group_io)
 
-    def _create_technology_graph(self):
+    def create_technology_graph(self):
         # Classify technologies based on their output commodity (or commodities)
         # Create a directed graph from the technology interconnections
         G = nx.DiGraph()
@@ -1703,7 +1703,7 @@ class H2IntegrateModel:
         Raises:
             ValueError: if a commodity being connected between two technologies is invalid.
         """
-        G = self._create_technology_graph()
+        G = self.create_technology_graph()
 
         # Get a list of the inputs and outputs of each technology used in the
         # tech_interconnections
