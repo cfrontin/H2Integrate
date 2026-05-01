@@ -31,7 +31,7 @@ def test_check_tech_interconnections(subtests, temp_copy_of_example):
         i for i in idx_electrolyzer_connect if tech_interconnections[i][1] == "h2_combiner"
     ]
     # update so that trying to connect oxygen out of electrolyzer to h2_combiner
-    # should get error because h2_combiner doesnt have an input for oxygen
+    # should get error because h2_combiner doesn't have an input for oxygen
     tech_interconnections[idx_electrolyzer_to_combiner[0]] = [
         "electrolyzer",
         "h2_combiner",
@@ -49,10 +49,10 @@ def test_check_tech_interconnections(subtests, temp_copy_of_example):
     with subtests.test("Commodity not input to destination"):
         with pytest.raises(ValueError) as excinfo:
             h2i.setup()
-        assert (
-            "Technology `h2_combiner` does not take `oxygen` as an input commodity stream"
-            in str(excinfo.value)
-        )
+        err = str(excinfo.value)
+        assert "do not accept their specified input commodity" in err
+        assert "`h2_combiner` <- `oxygen`" in err
+        assert "Update `technology_interconnections`" in err
 
     # Fix the plant config from the previous test
     tech_interconnections[idx_electrolyzer_to_combiner[0]] = [
@@ -84,7 +84,11 @@ def test_check_tech_interconnections(subtests, temp_copy_of_example):
     with subtests.test("Commodity not output from source"):
         with pytest.raises(ValueError) as excinfo:
             h2i.setup()
-        assert "Technology `battery` does not output commodity `hydrogen`" in str(excinfo.value)
+        err = str(excinfo.value)
+        assert "do not output their specified commodity" in err
+        assert "`battery` -> `hydrogen`" in err
+        assert "Update `technology_interconnections`" in err
+        assert "Update `technology_interconnections`" in err
 
 
 @pytest.mark.unit

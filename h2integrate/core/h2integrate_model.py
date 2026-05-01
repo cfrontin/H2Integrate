@@ -47,6 +47,10 @@ class H2IntegrateModel:
         # read in config file; it's a yaml dict that looks like this:
         self.load_config(config_input)
 
+        # create technology connection graph based on technology interconnections
+        # defined in plant config
+        self.create_technology_graph()
+
         # load in supported models
         self.supported_models = supported_models.copy()
 
@@ -85,14 +89,6 @@ class H2IntegrateModel:
         # create driver model
         # might be an analysis or optimization
         self.create_driver_model()
-
-        # create technology connection graph
-        G = self.create_technology_graph()
-        # Define the commodities produced by each technology from technology_interconnections
-        # Each element of the set is a tuple of (source_tech, commodity_produced)
-        self.techs_to_commodities = {
-            (e[0], e[-1]) for e in G.edges(data="commodity") if e[-1] is not None
-        }
 
         self.state = State.INITIALIZED
 
@@ -933,10 +929,10 @@ class H2IntegrateModel:
                         tech_configs.get(finance_group_name).get("finance_model", {}).get("model")
                     )
 
-                    # this is created in create_technologies()
+                    # this is created in create_technology_models()
                     if tech_finance_group_name is not None:
                         n_tech_finances_in_group += 1
-                        # tech specific finance models are created in create_technologies()
+                        # tech specific finance models are created in create_technology_models()
                         # and do not need to be included in the system finance models.
                         # set commodity_stream to None so that inputs needed for system-level
                         # finance models are not connected to tech-specific finance models.
@@ -1347,11 +1343,8 @@ class H2IntegrateModel:
 
         # Check if there are any loops in the technology interconnections
         # If loops are present, add solvers to resolve the coupling
-        # Create a directed graph from the technology interconnections
-        G = self.create_technology_graph()
-
-        # Check if there are any cycles (loops) in the graph
-        if list(nx.simple_cycles(G)):
+        # Check if there are any cycles (loops) in the technology graph
+        if list(nx.simple_cycles(self.technology_graph)):
             # If cycles are found, set solvers for the plant to resolve the coupling
             self.plant.nonlinear_solver = om.NonlinearBlockGS()
             self.plant.linear_solver = om.DirectSolver()
@@ -1404,7 +1397,7 @@ class H2IntegrateModel:
 
         for tech, tech_info in self.technology_config["technologies"].items():
             check_inputs(self.prob, tech, tech_info, self.tech_config_path)
-        self._check_tech_connections(self.prob)
+        self._check_tech_connections()
 
     def run(self):
         # do model setup based on the driver config
@@ -1644,111 +1637,103 @@ class H2IntegrateModel:
                 "but none were found."
             )
 
-    def _get_tech_group_io_metadata(self, prob, tech_name):
-        """Get the unique inputs and outputs of a technology.
-
-        Args:
-            prob (om.Problem): OpenMDAO problem defined in H2IntegrateModel
-            tech_name (str): name of technology
-
-        Returns:
-            list: the inputs and outputs of the technology group for tech_name
-        """
-        tech_info = self.technology_config["technologies"].get(tech_name, {})
-        model_types = ["performance_model", "finance_model", "cost_model", "control_strategy"]
-
-        tech_group_io = set()
-        for model_type in model_types:
-            if bool(tech_info) and model_type in tech_info:
-                if tech_info[model_type]["model"] == "FeedstockPerformanceModel":
-                    group = getattr(prob.model.plant, f"{tech_name}_source")
-                    inputs_outputs = list(group.get_io_metadata().keys())
-                    tech_group_io.update(inputs_outputs)
-
-                elif tech_info[model_type]["model"] == "FeedstockCostModel":
-                    group = getattr(prob.model.plant, tech_name)
-                    inputs_outputs = list(group.get_io_metadata().keys())
-                    tech_group_io.update(inputs_outputs)
-
-                else:
-                    group = getattr(prob.model.plant, tech_name)
-                    if (perf_sys := getattr(group, tech_info[model_type]["model"])) is not None:
-                        inputs_outputs = list(perf_sys.get_io_metadata().keys())
-                        tech_group_io.update(inputs_outputs)
-
-        return list(tech_group_io)
-
     def create_technology_graph(self):
-        # Classify technologies based on their output commodity (or commodities)
-        # Create a directed graph from the technology interconnections
-        G = nx.DiGraph()
+        """Create a directed graph of the technology interconnections.
+
+        Builds a NetworkX directed graph where nodes represent technologies
+        and edges represent connections between them. If a connection includes
+        a commodity (length-4 entry), it is stored as an edge attribute.
+
+        Sets:
+            self.technology_graph (nx.DiGraph): A directed graph with
+                technologies as nodes and interconnections as edges.
+        """
+        self.technology_graph = nx.DiGraph()
+
         for connection in self.plant_config.get("technology_interconnections", {}):
             source = connection[0]
             destination = connection[1]
             if len(connection) == 4:
-                G.add_edge(source, destination, commodity=connection[2])
+                self.technology_graph.add_edge(source, destination, commodity=connection[2])
             else:
-                G.add_edge(source, destination)
-        return G
+                self.technology_graph.add_edge(source, destination)
 
-    def _check_tech_connections(self, prob):
-        """Check that the commodity streams being passed from technology to technology
-        are valid (the commodity is output from the source technology and input to the
-        destination technology). This does NOT check for missing inputs commodity streams
-        and does not check technology interconnections that are length 3.
+    def _check_tech_connections(self):
+        """Check that commodity streams between technologies are valid.
 
-        Args:
-            prob (om.Problem): OpenMDAO problem defined in H2IntegrateModel
+        Validates that each commodity in a length-4 technology interconnection
+        is output by the source technology and accepted as input by the
+        destination technology. Does not check length-3 connections or
+        missing input commodity streams.
 
         Raises:
-            ValueError: if a commodity being connected between two technologies is invalid.
+            ValueError: If any commodity connection is invalid.
         """
-        G = self.create_technology_graph()
+        # Collect IO parameter names for each technology in the graph
+        tech_io = {}
+        for tech_name in self.technology_graph.nodes():
+            tech_info = self.technology_config["technologies"].get(tech_name, {})
+            io_params = set()
 
-        # Get a list of the inputs and outputs of each technology used in the
-        # tech_interconnections
-        tech_to_io_data = {
-            tech: self._get_tech_group_io_metadata(prob, tech) for tech in list(G.nodes())
-        }
+            for model_type in [
+                "performance_model",
+                "finance_model",
+                "cost_model",
+                "control_strategy",
+            ]:
+                if not tech_info or model_type not in tech_info:
+                    continue
 
-        # Initialize
-        invalid_source_commodity = set()
-        invalid_dest_commodity = set()
+                model_name = tech_info[model_type]["model"]
 
-        # Check 4-length connections where commodities are defined
-        for edge in G.edges(data="commodity"):
-            source_tech, dest_tech, commodity = edge
+                if model_name == "FeedstockPerformanceModel":
+                    group = getattr(self.prob.model.plant, f"{tech_name}_source")
+                else:
+                    group = getattr(self.prob.model.plant, tech_name)
+                    if model_name != "FeedstockCostModel":
+                        group = getattr(group, model_name, None)
+                        if group is None:
+                            continue
 
-            if commodity is not None:
-                # Check that the source tech outputs that commodity
-                if f"{commodity}_out" not in tech_to_io_data[source_tech]:
-                    # Check for outputs that follow splitter output naming convention
-                    if not any(
-                        re.fullmatch(rf"{commodity}_out\d", io_param)
-                        for io_param in tech_to_io_data[source_tech]
-                    ):
-                        invalid_source_commodity.add((source_tech, commodity))
+                io_params.update(group.get_io_metadata().keys())
 
-                # Check that the destination tech has an input for the commodity
-                if f"{commodity}_in" not in tech_to_io_data[dest_tech]:
-                    # Check for inputs that follow combiner input naming convention
-                    if not any(
-                        re.fullmatch(rf"{commodity}_in\d", io_param)
-                        for io_param in tech_to_io_data[dest_tech]
-                    ):
-                        invalid_dest_commodity.add((dest_tech, commodity))
+            tech_io[tech_name] = io_params
 
-        if len(invalid_source_commodity) > 0 or len(invalid_dest_commodity) > 0:
-            invalid_source_msg = ", ".join(
-                f"Technology `{isc[0]}` does not output commodity `{isc[1]}`."
-                for isc in invalid_source_commodity
+        def _has_commodity_param(params, commodity, direction):
+            """Check if the technology has the commodity parameter, either exact
+            or numbered (splitter/combiner)."""
+            return f"{commodity}_{direction}" in params or any(
+                re.fullmatch(rf"{commodity}_{direction}\d", p) for p in params
             )
-            invalid_dest_msg = ", ".join(
-                f"Technology `{idc[0]}` does not take `{idc[1]}` as an input commodity stream."
-                for idc in invalid_dest_commodity
-            )
-            msg = f"{invalid_source_msg}\n{invalid_dest_msg}"
-            raise ValueError(msg)
+
+        # Validate commodity connections
+        invalid_outputs = set()  # (tech, commodity) pairs where source lacks _out param
+        invalid_inputs = set()  # (tech, commodity) pairs where dest lacks _in param
+        for source, dest, commodity in self.technology_graph.edges(data="commodity"):
+            if commodity is None:
+                continue  # length-3 connections have no commodity to check
+            if not _has_commodity_param(tech_io[source], commodity, "out"):
+                invalid_outputs.add((source, commodity))
+            if not _has_commodity_param(tech_io[dest], commodity, "in"):
+                invalid_inputs.add((dest, commodity))
+
+        # Build a single error message grouping output and input issues separately
+        if invalid_outputs or invalid_inputs:
+            parts = []
+            if invalid_outputs:
+                items = ", ".join(f"`{tech}` -> `{comm}`" for tech, comm in sorted(invalid_outputs))
+                parts.append(
+                    f"The following technologies do not output their specified commodity: {items}."
+                )
+            if invalid_inputs:
+                items = ", ".join(f"`{tech}` <- `{comm}`" for tech, comm in sorted(invalid_inputs))
+                parts.append(
+                    f"The following technologies do not accept "
+                    f"their specified input commodity: {items}."
+                )
+            # Point user to the file that needs fixing
+            parts.append(f"Update `technology_interconnections` in {self.plant_config_path}.")
+            raise ValueError("\n".join(parts))
 
     def _get_commodity_for_tech(self, tech_name):
         """Get a list of the commodities produced for a technology.
@@ -1759,6 +1744,14 @@ class H2IntegrateModel:
         Returns:
             list[str]: list of commodities produced by the tech_name
         """
+        # Define the commodities produced by each technology from technology_interconnections
+        # Each element of the set is a tuple of (source_tech, commodity_produced)
+        self.techs_to_commodities = {
+            (e[0], e[-1])
+            for e in self.technology_graph.edges(data="commodity")
+            if e[-1] is not None
+        }
+
         tech_commodities = [e[1] for e in self.techs_to_commodities if e[0] == tech_name]
 
         return tech_commodities
