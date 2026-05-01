@@ -1682,7 +1682,7 @@ class H2IntegrateModel:
         # Classify technologies based on their output commodity (or commodities)
         # Create a directed graph from the technology interconnections
         G = nx.DiGraph()
-        for connection in self.plant_config["technology_interconnections"]:
+        for connection in self.plant_config.get("technology_interconnections", {}):
             source = connection[0]
             destination = connection[1]
             if len(connection) == 4:
@@ -1711,6 +1711,10 @@ class H2IntegrateModel:
             tech: self._get_tech_group_io_metadata(prob, tech) for tech in list(G.nodes())
         }
 
+        # Initialize
+        invalid_source_commodity = set()
+        invalid_dest_commodity = set()
+
         # Check 4-length connections where commodities are defined
         for edge in G.edges(data="commodity"):
             source_tech, dest_tech, commodity = edge
@@ -1718,13 +1722,14 @@ class H2IntegrateModel:
             if commodity is not None:
                 # Check that the source tech outputs that commodity
                 if f"{commodity}_out" not in tech_to_io_data[source_tech]:
-                    msg = f"Technology `{source_tech}` does not output " f"commodity `{commodity}`."
+                    msg = f"Technology `{source_tech}` does not output commodity `{commodity}`."
                     # Check for outputs that follow splitter output naming convention
                     if not any(
                         re.fullmatch(rf"{commodity}_out\d", io_param)
                         for io_param in tech_to_io_data[source_tech]
                     ):
-                        raise ValueError(msg)
+                        invalid_source_commodity.add((source_tech, commodity))
+
                 # Check that the destination tech has an input for the commodity
                 if f"{commodity}_in" not in tech_to_io_data[dest_tech]:
                     # Check for inputs that follow combiner input naming convention
@@ -1736,7 +1741,19 @@ class H2IntegrateModel:
                             f"Technology `{dest_tech}` does not take `{commodity}` "
                             "as an input commodity stream."
                         )
-                        raise ValueError(msg)
+                        invalid_dest_commodity.add((dest_tech, commodity))
+
+        if len(invalid_source_commodity) > 0 or len(invalid_dest_commodity) > 0:
+            invalid_source_msg = ", ".join(
+                f"Technology `{isc[0]}` does not output commodity `{isc[1]}`."
+                for isc in invalid_source_commodity
+            )
+            invalid_dest_msg = ", ".join(
+                f"Technology `{idc[0]}` does not take `{idc[1]}` as an input commodity stream."
+                for idc in invalid_dest_commodity
+            )
+            msg = f"{invalid_source_msg}\n{invalid_dest_msg}"
+            raise ValueError(msg)
 
     def _get_commodity_for_tech(self, tech_name):
         """Get a list of the commodities produced for a technology.
