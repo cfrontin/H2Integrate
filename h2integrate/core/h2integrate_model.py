@@ -1722,7 +1722,6 @@ class H2IntegrateModel:
             if commodity is not None:
                 # Check that the source tech outputs that commodity
                 if f"{commodity}_out" not in tech_to_io_data[source_tech]:
-                    msg = f"Technology `{source_tech}` does not output commodity `{commodity}`."
                     # Check for outputs that follow splitter output naming convention
                     if not any(
                         re.fullmatch(rf"{commodity}_out\d", io_param)
@@ -1737,10 +1736,6 @@ class H2IntegrateModel:
                         re.fullmatch(rf"{commodity}_in\d", io_param)
                         for io_param in tech_to_io_data[dest_tech]
                     ):
-                        msg = (
-                            f"Technology `{dest_tech}` does not take `{commodity}` "
-                            "as an input commodity stream."
-                        )
                         invalid_dest_commodity.add((dest_tech, commodity))
 
         if len(invalid_source_commodity) > 0 or len(invalid_dest_commodity) > 0:
