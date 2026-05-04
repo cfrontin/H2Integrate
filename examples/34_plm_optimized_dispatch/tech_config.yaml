@@ -13,7 +13,7 @@ technologies:
         commodity: electricity
         commodity_rate_units: kW
         max_charge_rate: 300.0  # kW rated power
-        max_capacity: 2000.0  # kWh usable capacity (4-hour battery)
+        max_capacity: 2000.0  # kWh usable capacity
         max_soc_fraction: 0.90
         min_soc_fraction: 0.10
         init_soc_fraction: 0.90
@@ -25,9 +25,9 @@ technologies:
         system_commodity_interface_limit: 1.0e9
         supervisory_signal: !include demand_profiles/supervisory_signal.yaml
         peak_window:
-          start: 12:00:00  # 2 pm MDT
-          end: 20:00:00  # 6 pm MDT
-        performance_incentive_per_event: 16800.0  # $/event (= 14 $/kWh * 4 h * 300 kW)
+          start: 12:00:00
+          end: 20:00:00
+        performance_incentive_per_event: 16800.0  # $/event
         n_max_events: 10  # maximum discharge events per month
         signal_threshold_percentile: 95.0  # only dispatch when LMP >= this percentile
         n_control_window_hours: 24  # hours; converted to timesteps using simulation dt
@@ -40,7 +40,7 @@ technologies:
         round_digits: 4
       cost_parameters:
         cost_year: 2024
-        energy_capex: 408  # $/kWh  (2024 ATB)
+        energy_capex: 408  # $/kWh
         power_capex: 379  # $/kW
         opex_fraction: 0.025
   grid_buy:
