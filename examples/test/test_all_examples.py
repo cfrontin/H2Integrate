@@ -696,6 +696,49 @@ def test_splitter_wind_doc_h2_example(subtests, temp_copy_of_example):
             == 132.395036462
         )
 
+    with subtests.test("Check LCOE (doc)"):
+        assert (
+            pytest.approx(
+                model.prob.get_val("finance_subgroup_electricity_doc.LCOE", units="USD/(MW*h)")[0],
+                rel=1e-3,
+            )
+            == 674.2414136935529
+        )
+
+    with subtests.test("Check finance_subgroup_electricity_doc electricity inputs"):
+        assert (
+            pytest.approx(
+                model.prob.get_val(
+                    "finance_subgroup_electricity_doc.rated_electricity_production", units="kW"
+                ),
+                rel=1e-6,
+            )
+            == model.prob.get_val("doc.electricity_in", units="kW").mean()
+        )
+
+    with subtests.test("Check LCOE (electrolyzer)"):
+        assert (
+            pytest.approx(
+                model.prob.get_val(
+                    "finance_subgroup_electricity_electrolyzer.LCOE", units="USD/(MW*h)"
+                )[0],
+                rel=1e-3,
+            )
+            == 182.8942790183688
+        )
+
+    with subtests.test("Check finance_subgroup_electricity_electrolyzer electricity inputs"):
+        assert (
+            pytest.approx(
+                model.prob.get_val(
+                    "finance_subgroup_electricity_electrolyzer.rated_electricity_production",
+                    units="kW",
+                ),
+                rel=1e-6,
+            )
+            == model.prob.get_val("electrolyzer.electricity_in", units="kW").mean()
+        )
+
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
