@@ -72,14 +72,16 @@ The controller works at any simulation timestep resolution (`dt`). All time-base
 - $\Delta t$ := simulation timestep duration (hours), derived from `dt` in the plant config
 - $\mathcal{W}$ := `peak_window`: set of timesteps eligible for dispatch (e.g., 12:00--20:00 each day)
 - $\lambda_*$ := signal threshold = `signal_threshold_percentile`-th percentile of $\lambda_t$ over $\mathcal{W}$
+- `min_peak_separation` := minimum required time between two eligible peaks, expressed as a ``{units, val}`` dict. When set, only the first eligible peak is chosen.
 - $\mathcal{E}$ := eligible peak timesteps: $\{t \in \mathcal{W} : \lambda_t \geq \lambda_*\}$, respecting `min_peak_separation`
-- $\mathcal{D}$ := dispatch window:  $\pm\,\tfrac{\text{event\_duration}}{2}$  around each peak in $\mathcal{E}$
-- $\gamma$ := `performance_incentive` (\$/kWh): incentive revenue per kWh discharged
+- `event_duration` := total duration of one discharge event, expressed as a ``{units, val}`` dict (e.g. ``{units: h, val: 4}`` for a 4-hour event)
+- $\mathcal{D}$ := dispatch window: $\pm$`event_duration`/2 neighbourhoods around each peak in $\mathcal{E}$ (equals $\mathcal{E}$ when `event_duration` is `null`)
+- $\gamma$ := incentive revenue per kWh discharged (\$/kWh). Specified directly via `performance_incentive`, or derived from `performance_incentive_per_event` (\$/event) as $\gamma = \gamma_{\text{event}} / (\tau \cdot \Delta t \cdot \bar{P})$
 - $\bar{P}$ := `max_charge_rate` (kW): maximum charge and discharge rate
 - $E_{\max} :=$ `max_capacity` $\times$ (`max_soc_fraction` $-$ `min_soc_fraction`): usable energy capacity (kWh)
 - $\eta_c$ := `charge_efficiency`, $\quad \eta_d$ := `discharge_efficiency`
 - $\overline{\text{SoC}}$ := `max_soc_fraction`, $\quad \underline{\text{SoC}}$ := `min_soc_fraction`
-- `n_control_window_hours` := rolling horizon length in hours; converted to $T = \lceil \text{n\_control\_window\_hours} / \Delta t \rceil$ timesteps
+- `n_control_window_hours` := rolling horizon length in hours; converted to $T =$ `n_control_window_hours` / $\Delta t$ timesteps
 - $\mathcal{T} := \{0, 1, \ldots, T-1\}$: timesteps in the current rolling window
 - $\mathcal{M}_m$ := set of timesteps in month $m$, for $m = 1, \ldots, 12$
 - $N_{\max}$ := `n_max_events`: maximum number of discharge events per calendar month
@@ -92,7 +94,7 @@ Before the MILP is solved, the dispatch window $\mathcal{D}$ is built in two ste
 
 **Step 1 : Peak selection:** Within $\mathcal{W}$, timesteps at or above the `signal_threshold_percentile` of $\lambda_t$ are marked eligible: $\mathcal{E} = \{t \in \mathcal{W} : \lambda_t \geq \lambda_*\}$. If `min_peak_separation` is set, only the first peak is chosen.
 
-**Step 2 : Event window expansion:** If `event_duration` is specified, each peak in $\mathcal{E}$ is expanded by $\pm\,\tfrac{\text{event\_duration}}{2}$ timesteps to form $\mathcal{D}$. If `event_duration` is `null`, $\mathcal{D} = \mathcal{E}$.
+**Step 2 : Event window expansion:** If `event_duration` is specified, each peak in $\mathcal{E}$ is expanded by $\pm$ `event_duration`/2 timesteps to form $\mathcal{D}$. If `event_duration` is `null`, $\mathcal{D} = \mathcal{E}$.
 
 ## Decision Variables
 
