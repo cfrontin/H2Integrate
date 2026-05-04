@@ -417,8 +417,9 @@ class PYSAMWindPlantPerformanceModel(WindPerformanceBaseClass):
             self.power_curve_config.wind_default_drive_train,
         )
         success = False
-        if max(self.system_model.value("wind_turbine_powercurve_powerout")) == float(
-            turbine_rating_kw
+        if np.isclose(
+            max(self.system_model.value("wind_turbine_powercurve_powerout")),
+            float(turbine_rating_kw),
         ):
             success = True
         return success
