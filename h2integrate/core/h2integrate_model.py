@@ -1308,17 +1308,24 @@ class H2IntegrateModel:
                 is_system_finance_model = group_configs.get("is_system_finance_model")
 
                 if is_system_finance_model:
-                    # Connect the rated commodity production and capacity factor
-                    # for system-level finance models
-                    self.plant.connect(
-                        f"{commodity_stream}.rated_{primary_commodity_type}_production",
-                        f"finance_subgroup_{group_id}.rated_{primary_commodity_type}_production",
-                    )
+                    if group_configs.get("commodity_stream_name", None) is None:
+                        # Connect the rated commodity production and capacity factor
+                        # for system-level finance models
+                        self.plant.connect(
+                            f"{commodity_stream}.rated_{primary_commodity_type}_production",
+                            f"finance_subgroup_{group_id}.rated_{primary_commodity_type}_production",
+                        )
 
-                    self.plant.connect(
-                        f"{commodity_stream}.capacity_factor",
-                        f"finance_subgroup_{group_id}.capacity_factor",
-                    )
+                        self.plant.connect(
+                            f"{commodity_stream}.capacity_factor",
+                            f"finance_subgroup_{group_id}.capacity_factor",
+                        )
+                    else:
+                        # TODO: finish this logic
+                        self.plant.connect(
+                            f"{commodity_stream}.{group_configs.get('commodity_stream_name')}",
+                            f"finance_subgroup_{group_id}.capacity_factor",
+                        )
 
                 # Only connect technologies that are included in the finance stackup
                 for tech_name in tech_configs.keys():
