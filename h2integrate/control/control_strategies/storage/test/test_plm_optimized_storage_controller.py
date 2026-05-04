@@ -3,8 +3,10 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 import pytest
+import openmdao.api as om
 import pyomo.environ as pyomo
 
+from h2integrate.storage.storage_performance_model import StoragePerformanceModel
 from h2integrate.control.control_strategies.storage.plm_optimized_storage_controller import (
     PeakLoadManagementOptimizedControllerConfig,
     PeakLoadManagementOptimizedStorageController,
@@ -399,3 +401,129 @@ def test_performance_incentive_per_event_matches_equivalent_kwh_rate():
             )
             < 1e-4
         ), f"dispatch mismatch at t={t}"
+
+
+@pytest.fixture
+def om_plant_config():
+    return {
+        "plant": {
+            "plant_life": 30,
+            "simulation": {
+                "n_timesteps": 24,
+                "dt": 3600,
+                "timezone": 0,
+                "start_time": "01/01/2024 00:00:00",
+            },
+        },
+        "tech_to_dispatch_connections": [["controller", "storage"]],
+    }
+
+
+@pytest.fixture
+def om_tech_config():
+    n = 24
+    return {
+        "model_inputs": {
+            "shared_parameters": {
+                "tech_name": "battery",
+                "commodity": "electricity",
+                "commodity_rate_units": "kW",
+                "max_charge_rate": 1.0,
+                "max_capacity": 10.0,
+                "max_soc_fraction": 1.0,
+                "min_soc_fraction": 0.0,
+                "init_soc_fraction": 1.0,
+                "charge_efficiency": 1.0,
+                "discharge_efficiency": 1.0,
+            },
+            "performance_parameters": {
+                "demand_profile": 10.0,
+            },
+            "control_parameters": {
+                "system_commodity_interface_limit": 1.0e9,
+                "supervisory_signal": np.ones(n).tolist(),
+                "peak_window": {"start": "02:00:00", "end": "04:00:00"},
+                "performance_incentive": 10.0,
+                "n_max_events": 24,
+                "signal_threshold_percentile": 0.0,
+                "n_control_window_hours": n,
+            },
+        }
+    }
+
+
+@pytest.mark.regression
+def test_plm_optimized_controller_om_problem_soc_bounds(subtests, om_plant_config, om_tech_config):
+    """Controller and StoragePerformanceModel wired as an om.Problem respect SOC bounds
+    and discharge only within the peak window."""
+    n = om_plant_config["plant"]["simulation"]["n_timesteps"]
+
+    prob = om.Problem()
+
+    prob.model.add_subsystem(
+        name="IVC",
+        subsys=om.IndepVarComp(name="electricity_in", val=np.ones(n), units="kW"),
+        promotes=["*"],
+    )
+    prob.model.add_subsystem(
+        "controller",
+        PeakLoadManagementOptimizedStorageController(
+            plant_config=om_plant_config,
+            tech_config=om_tech_config,
+        ),
+        promotes=["*"],
+    )
+    prob.model.add_subsystem(
+        "storage",
+        StoragePerformanceModel(
+            plant_config=om_plant_config,
+            tech_config=om_tech_config,
+        ),
+        promotes=["*"],
+    )
+
+    prob.setup()
+    prob.run_model()
+
+    soc = prob.get_val("SOC", units="unitless")
+    # print
+    print("SOC:", soc)
+    discharge = prob.get_val("storage_electricity_discharge", units="kW")
+    print("Discharge:", discharge)
+
+    with subtests.test("SOC never below min"):
+        assert np.all(soc >= 0.0 - 1e-1)
+
+    with subtests.test("SOC never above max"):
+        assert np.all(soc <= 1.0 + 1e-1)
+
+    pw = om_tech_config["model_inputs"]["control_parameters"]["peak_window"]
+    pw_start = pd.Timestamp(f"2024-01-01 {pw['start']}").time()
+    pw_end = pd.Timestamp(f"2024-01-01 {pw['end']}").time()
+    with subtests.test(f"discharge only inside peak window ({pw['start'][:5]}-{pw['end'][:5]})"):
+        time_index = pd.date_range("2024-01-01", periods=n, freq="h")
+        for t in range(n):
+            in_window = pw_start <= time_index[t].time() < pw_end
+            if not in_window:
+                assert (
+                    discharge[t] <= 1e-4
+                ), f"discharge {discharge[t]:.4f} kW outside peak window at t={t}"
+
+    with subtests.test("discharge never negative"):
+        assert np.all(discharge >= -1e-4)
+
+    with subtests.test("discharge never above max_charge_rate"):
+        assert np.all(discharge <= 1.0 + 1e-4)
+
+    with subtests.test("SOC at t=0 equal to init_soc_fraction"):
+        assert abs(soc[0] - 1.0) < 1e-4
+
+    with subtests.test("SOC evolution consistent with discharge and charge"):
+        shared = om_tech_config["model_inputs"]["shared_parameters"]
+        E_max = shared["max_capacity"] * (shared["max_soc_fraction"] - shared["min_soc_fraction"])
+        charge = prob.get_val("storage_electricity_charge", units="kW")
+        expected_soc = np.zeros(n)
+        expected_soc[0] = shared["init_soc_fraction"]
+        for t in range(1, n):
+            expected_soc[t] = expected_soc[t - 1] + charge[t] / E_max - discharge[t] / E_max
+        assert np.allclose(soc, expected_soc, atol=1e-4)
