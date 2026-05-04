@@ -122,27 +122,6 @@ class PeakLoadManagementOptimizedControllerConfig(PyomoStorageControllerBaseConf
                         f"(int or float), got {type(value['val']).__name__}."
                     )
 
-        if self.event_duration and self.min_peak_separation:
-            event_steps = (
-                pd.Timedelta(
-                    value=self.event_duration["val"],
-                    unit=self.event_duration["units"],
-                ).total_seconds()
-                / self.dt_seconds
-            )
-            separation_steps = (
-                pd.Timedelta(
-                    value=self.min_peak_separation["val"],
-                    unit=self.min_peak_separation["units"],
-                ).total_seconds()
-                / self.dt_seconds
-            )
-            if separation_steps < event_steps:
-                raise ValueError(
-                    "min_peak_separation must be greater than or equal to event_duration to avoid "
-                    "conflicts between the two parameters."
-                )
-
 
 class PeakLoadManagementOptimizedStorageController(PyomoStorageControllerBaseClass):
     """Demand-response storage controller using a rolling-horizon MILP.
