@@ -85,3 +85,43 @@ class AdjustedCapexOpexComp(om.ExplicitComponent):
         outputs["total_capex_adjusted"] = total_capex_adjusted
         outputs["total_opex_adjusted"] = total_opex_adjusted
         outputs["total_varopex_adjusted"] = total_varopex_adjusted
+
+
+class AdjustedCapacityFactorComp(om.ExplicitComponent):
+    def initialize(self):
+        self.options.declare("plant_config", types=dict)
+        self.options.declare("commodity_stream_name", types=str)
+        self.options.declare("commodity_type", types=str)
+
+    def setup(self):
+        plant_life = int(self.options["plant_config"]["plant"]["plant_life"])
+        self.n_timesteps = int(self.options["plant_config"]["simulation"]["n_timesteps"])
+        self.dt = int(self.options["plant_config"]["simulation"]["dt"])
+
+        self.add_input(
+            self.options["commodity_stream_name"],
+            val=0.0,
+            units_by_conn=True,
+            shape=self.n_timesteps,
+        )
+
+        self.add_output(
+            f"rated_{self.options['commodity_type']}_production",
+            val=0.0,
+            copy_units=self.options["commodity_stream_name"],
+            shape=1,
+        )
+
+        self.add_output(
+            "capacity_factor",
+            val=1.0,
+            units="unitless",
+            shape=plant_life,
+        )
+
+    def compute(self, inputs, outputs):
+        outputs[f"rated_{self.options['commodity_type']}_production"] = np.mean(
+            inputs[self.options["commodity_stream_name"]]
+        )
+
+        outputs["capacity_factor"] = 1.0

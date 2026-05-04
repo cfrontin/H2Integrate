@@ -11,7 +11,7 @@ from h2integrate.core.sites import SiteLocationComponent
 from h2integrate.core.utilities import create_xdsm_from_config
 from h2integrate.core.dict_utils import check_inputs
 from h2integrate.core.file_utils import get_path, find_file, load_yaml
-from h2integrate.finances.finances import AdjustedCapexOpexComp
+from h2integrate.finances.finances import AdjustedCapexOpexComp, AdjustedCapacityFactorComp
 from h2integrate.core.supported_models import (
     no_cost_models,
     supported_models,
@@ -798,7 +798,7 @@ class H2IntegrateModel:
             )
             tech_names = subgroup_params.get("technologies")
             commodity_stream = subgroup_params.get("commodity_stream", None)
-
+            (False if subgroup_params.get("commodity_stream_name", None) is None else True)
             if isinstance(finance_group_names, str):
                 finance_group_names = [finance_group_names]
 
@@ -839,6 +839,7 @@ class H2IntegrateModel:
                         "commodity": commodity,
                         "commodity_stream": commodity_stream,
                         "is_system_finance_model": True,
+                        "commodity_stream_name": subgroup_params.get("commodity_stream_name", None),
                     }
                 }
             )
@@ -1001,6 +1002,15 @@ class H2IntegrateModel:
                         # update the description to include the finance model name to ensure
                         # uniquely named outputs
                         commodity_output_desc = commodity_output_desc + f"_{finance_group_name}"
+                if finance_subgroups[subgroup_name].get("commodity_stream_name", None) is not None:
+                    adj_cf_comp = AdjustedCapacityFactorComp(
+                        plant_config=filtered_plant_config,
+                        commodity_stream_name=finance_subgroups[subgroup_name][
+                            "commodity_stream_name"
+                        ],
+                        commodity_type=commodity,
+                    )
+                    finance_subgroup.add_subsystem("adjusted_cf_comp", adj_cf_comp, promotes=["*"])
 
                 # create the finance component
                 fin_comp = fin_model(
