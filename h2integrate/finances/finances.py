@@ -88,6 +88,21 @@ class AdjustedCapexOpexComp(om.ExplicitComponent):
 
 
 class AdjustedCapacityFactorComp(om.ExplicitComponent):
+    """OpenMDAO component to calculate the capacity factor and
+    rated commodity production based on a time-series profile. This
+    component should be used when the desired commodity stream of a
+    technology does not have an associated capacity factor or rated
+    production output.
+
+    Inputs:
+        {commodity}_produced (np.ndarray): timeseries profile of some commodity.
+
+    Outputs:
+        rated_{commodity}_produced (float): The average commodity produced.
+        capacity_factor (np.ndarray): An array of ones, same length as the plant life.
+
+    """
+
     def initialize(self):
         self.options.declare("plant_config", types=dict)
         self.options.declare("commodity_type", types=str)
@@ -120,8 +135,10 @@ class AdjustedCapacityFactorComp(om.ExplicitComponent):
         )
 
     def compute(self, inputs, outputs):
+        # Take the average of the timeseries profile
         outputs[f"rated_{self.commodity}_production"] = np.mean(
             inputs[f"{self.commodity}_produced"]
         )
 
+        # Set capacity factor equal to one
         outputs["capacity_factor"] = 1.0
