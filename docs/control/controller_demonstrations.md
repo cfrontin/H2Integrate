@@ -15,10 +15,10 @@ kernelspec:
 
 ```{code-cell} ipython3
 from pathlib import Path
+
 from matplotlib import pyplot as plt
 
-from h2integrate import H2IntegrateModel, EXAMMPLE_DIR
-
+from h2integrate import H2IntegrateModel, EXAMPLE_DIR
 ```
 
 ## Hydrogen Dispatch
