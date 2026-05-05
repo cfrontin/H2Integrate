@@ -135,8 +135,6 @@ Use the built-in `create_xdsm()` method to generate a static system diagram from
 ```python
 import os
 
-import openmdao.api as o
-
 from h2integrate import H2IntegrateModel
 
 
@@ -163,6 +161,13 @@ This creates a PDF named `connections_xdsm.pdf` in your current working director
 Use OpenMDAO's `n2` utility to generate an interactive HTML diagram of the full model.
 
 ```{code-cell} ipython3
+import os
+
+import openmdao.api as om
+
+from h2integrate import H2IntegrateModel
+
+
 # Change to an example directory
 os.chdir("../../examples/08_wind_electrolyzer/")
 
