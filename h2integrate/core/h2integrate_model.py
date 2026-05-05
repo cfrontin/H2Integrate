@@ -798,7 +798,6 @@ class H2IntegrateModel:
             )
             tech_names = subgroup_params.get("technologies")
             commodity_stream = subgroup_params.get("commodity_stream", None)
-            (False if subgroup_params.get("commodity_stream_name", None) is None else True)
             if isinstance(finance_group_names, str):
                 finance_group_names = [finance_group_names]
 
