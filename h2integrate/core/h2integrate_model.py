@@ -1008,11 +1008,11 @@ class H2IntegrateModel:
                         commodity_output_desc = commodity_output_desc + f"_{finance_group_name}"
 
                 if finance_subgroups[subgroup_name]["use_commodity_stream_timeseries"]:
-                    if "commodity_stream_name" not in finance_subgroups[subgroup_name]:
+                    if finance_subgroups[subgroup_name].get("commodity_stream_name", None) is None:
                         msg = (
                             "`commodity_stream_name` is a required input if "
                             f"`use_commodity_stream_timeseries` is True. Please add the "
-                            f"`commodity_stream_name` for finance subgroup {subgroup_name}"
+                            f"`commodity_stream_name` for finance subgroup `{subgroup_name}`"
                         )
                         raise ValueError(msg)
 
