@@ -66,6 +66,7 @@ finance_parameters:
       technologies: [wind, electrolyzer]
     hydrogen:
       commodity: hydrogen
+      commodity_stream: electrolyzer
       technologies: [wind, electrolyzer]
     co2:
       commodity: co2
