@@ -569,7 +569,7 @@ class PeakLoadManagementOptimizedStorageController(PyomoStorageControllerBaseCla
         m.T = pyomo.Set(initialize=range(window_len), doc="Timesteps in window")
         m.M = pyomo.Set(initialize=months_in_window, doc="Months in window")
 
-## Variables
+        ## Variables
         # Binary event indicators- used for event counting and window constraints.
         m.discharge = pyomo.Var(
             m.T, domain=pyomo.Binary, doc="1 if a discharge event is active at timestep t"
