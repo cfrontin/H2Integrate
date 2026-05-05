@@ -652,7 +652,7 @@ def test_splitter_wind_doc_h2_example(subtests, temp_copy_of_example):
             "commodity": "hydrogen",
             "commodity_stream": "electrolyzer",
             "use_commodity_stream_timeseries": True,
-            "commodity_stream_name": "hydrogen_out",
+            "commodity_stream_output": "hydrogen_out",
             "technologies": ["wind", "electrolyzer"],
         }
     }
@@ -662,7 +662,7 @@ def test_splitter_wind_doc_h2_example(subtests, temp_copy_of_example):
             "commodity": "electricity",
             "commodity_stream": "wind",
             "use_commodity_stream_timeseries": True,
-            "commodity_stream_name": "electricity_out",
+            "commodity_stream_output": "electricity_out",
             "technologies": ["wind"],
         }
     }

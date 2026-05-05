@@ -841,7 +841,9 @@ class H2IntegrateModel:
                         "use_commodity_stream_timeseries": subgroup_params.get(
                             "use_commodity_stream_timeseries", False
                         ),
-                        "commodity_stream_name": subgroup_params.get("commodity_stream_name", None),
+                        "commodity_stream_output": subgroup_params.get(
+                            "commodity_stream_output", None
+                        ),
                     }
                 }
             )
@@ -1007,11 +1009,14 @@ class H2IntegrateModel:
                         commodity_output_desc = commodity_output_desc + f"_{finance_group_name}"
 
                 if finance_subgroups[subgroup_name]["use_commodity_stream_timeseries"]:
-                    if finance_subgroups[subgroup_name].get("commodity_stream_name", None) is None:
+                    if (
+                        finance_subgroups[subgroup_name].get("commodity_stream_output", None)
+                        is None
+                    ):
                         msg = (
-                            "`commodity_stream_name` is a required input if "
+                            "`commodity_stream_output` is a required input if "
                             f"`use_commodity_stream_timeseries` is True. Please add the "
-                            f"`commodity_stream_name` for finance subgroup `{subgroup_name}`"
+                            f"`commodity_stream_output` for finance subgroup `{subgroup_name}`"
                         )
                         raise ValueError(msg)
 
@@ -1320,7 +1325,7 @@ class H2IntegrateModel:
                     if group_configs.get("use_commodity_stream_timeseries", False):
                         # TODO: finish this logic
                         self.plant.connect(
-                            f"{commodity_stream}.{group_configs.get('commodity_stream_name')}",
+                            f"{commodity_stream}.{group_configs.get('commodity_stream_output')}",
                             f"finance_subgroup_{group_id}.{primary_commodity_type}_produced",
                         )
                     else:

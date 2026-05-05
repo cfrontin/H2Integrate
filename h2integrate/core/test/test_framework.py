@@ -24,9 +24,9 @@ def test_use_commodity_stream_timeseries_finances_error(subtests, temp_copy_of_e
     driver_config = load_driver_yaml(example_folder / "driver_config.yaml")
     tech_config = load_tech_yaml(example_folder / "tech_config.yaml")
 
-    # Remove commodity_stream_name from finace subgroup
+    # Remove commodity_stream_output from finace subgroup
     plant_config["finance_parameters"]["finance_subgroups"]["electricity_doc"].pop(
-        "commodity_stream_name"
+        "commodity_stream_output"
     )
     top_level_config = {
         "plant_config": plant_config,
@@ -38,7 +38,7 @@ def test_use_commodity_stream_timeseries_finances_error(subtests, temp_copy_of_e
         with pytest.raises(ValueError) as excinfo:
             H2IntegrateModel(top_level_config)
         err = str(excinfo.value)
-        assert "`commodity_stream_name` is a required input" in err
+        assert "`commodity_stream_output` is a required input" in err
         assert "`use_commodity_stream_timeseries` is True" in err
         assert "finance subgroup `electricity_doc`" in err
 
