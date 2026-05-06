@@ -34,12 +34,16 @@ def test_use_commodity_stream_timeseries_finances_error(subtests, temp_copy_of_e
         "driver_config": driver_config,
     }
 
-    with subtests.test("Commodity stream name is missing"):
-        with pytest.raises(ValueError) as excinfo:
-            H2IntegrateModel(top_level_config)
-        err = str(excinfo.value)
+    with pytest.raises(ValueError) as excinfo:
+        H2IntegrateModel(top_level_config)
+    err = str(excinfo.value)
+    with subtests.test("Commodity stream name is missing (commodity_stream_output is required)"):
         assert "`commodity_stream_output` is a required input" in err
+    with subtests.test(
+        "Commodity stream name is missing (use_commodity_stream_timeseries is True)"
+    ):
         assert "`use_commodity_stream_timeseries` is True" in err
+    with subtests.test("Commodity stream name is missing (finance subgroup `electricity_doc`)"):
         assert "finance subgroup `electricity_doc`" in err
 
 
