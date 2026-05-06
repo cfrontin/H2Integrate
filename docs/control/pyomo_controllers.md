@@ -70,7 +70,7 @@ The controller works at any simulation timestep resolution (`dt`). All time-base
 **Given:**
 - $\lambda_t$ := `supervisory_signal`: price, demand, or price $\times$ demand time series at timestep $t$
 - $\Delta t$ := simulation timestep duration (hours), derived from `dt` in the plant config
-- $\mathcal{W}$ := `peak_window`: set of timesteps eligible for dispatch (e.g., 12:00--20:00 each day)
+- $\mathcal{W}$ := `peak_window`: set of timesteps eligible for dispatch (e.g., 12:00-20:00 each day)
 - $\lambda_*$ := signal threshold = `signal_threshold_percentile`-th percentile of $\lambda_t$ over $\mathcal{W}$
 - `min_peak_separation` := minimum required time between two eligible peaks, expressed as a ``{units, val}`` dict. When set, only the first eligible peak is chosen.
 - $\mathcal{E}$ := eligible peak timesteps: $\{t \in \mathcal{W} : \lambda_t \geq \lambda_*\}$, respecting `min_peak_separation`

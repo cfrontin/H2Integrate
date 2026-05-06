@@ -67,16 +67,18 @@ def base_config():
 
 
 @pytest.mark.unit
-def test_parse_peak_window():
+def test_parse_peak_window(subtests):
     controller = _make_controller()
     controller.config = SimpleNamespace(peak_window={"start": "08:00:00", "end": "18:40:20"})
     start, end = controller._parse_peak_window()
-    assert start.hour == 8
-    assert start.minute == 0
-    assert start.second == 0
-    assert end.hour == 18
-    assert end.minute == 40
-    assert end.second == 20
+    with subtests.test("start time"):
+        assert start.hour == 8
+        assert start.minute == 0
+        assert start.second == 0
+    with subtests.test("end time"):
+        assert end.hour == 18
+        assert end.minute == 40
+        assert end.second == 20
 
 
 @pytest.mark.unit
@@ -98,14 +100,16 @@ def test_parse_peak_window_missing_key_raises():
 
 
 @pytest.mark.unit
-def test_compute_peak_window_mask():
+def test_compute_peak_window_mask(subtests):
     controller = _make_controller()
     controller.config = SimpleNamespace(peak_window={"start": "00:00:00", "end": "02:00:00"})
     controller.time_index = pd.date_range("2024-01-01", periods=24, freq="h")
     mask = controller._compute_peak_window_mask()
     expected = np.array([i < 2 for i in range(24)])
-    assert isinstance(mask, np.ndarray)
-    assert np.array_equal(mask, expected)
+    with subtests.test("Returns ndarray"):
+        assert isinstance(mask, np.ndarray)
+    with subtests.test("Correct values"):
+        assert np.array_equal(mask, expected)
 
 
 @pytest.mark.unit
@@ -114,20 +118,24 @@ def test_compute_month_ids():
     controller.time_index = pd.date_range("2024-01-01", periods=744 + 696 + 744, freq="h")
     month_ids = controller._compute_month_ids()
     expected = np.array([1] * 744 + [2] * 696 + [3] * 744)
-    assert np.array_equal(month_ids, expected)
+    assert np.array_equal(month_ids, expected), f"Expected {expected} but got {month_ids}"
 
 
 @pytest.mark.unit
-def test_compute_eligible_mask_zero_percentile_all_eligible():
+def test_compute_eligible_mask_zero_percentile_all_eligible(subtests):
     """All timesteps are eligible when signal_threshold_percentile=0."""
     controller = _make_controller()
     controller.config = SimpleNamespace(signal_threshold_percentile=0.0, min_peak_separation=None)
     signal = np.array([1.0, 5.0, 3.0, 2.0, 8.0])
     mask = controller._compute_eligible_mask(signal)
-    assert isinstance(mask, np.ndarray)
-    assert mask.dtype == bool
-    assert len(mask) == len(signal)
-    assert mask.all()
+    with subtests.test("_compute_eligible_mask Returns ndarray"):
+        assert isinstance(mask, np.ndarray)
+    with subtests.test("_compute_eligible_mask returns Bool dtype"):
+        assert mask.dtype == bool
+    with subtests.test("_compute_eligible_mask returns correct length"):
+        assert len(mask) == len(signal)
+    with subtests.test("_compute_eligible_mask marks all as eligible when percentile=0`"):
+        assert mask.all()
 
 
 @pytest.mark.unit
@@ -138,7 +146,7 @@ def test_compute_eligible_mask_50th_percentile():
     signal = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
     mask = controller._compute_eligible_mask(signal)
     expected = signal >= np.percentile(signal, 50.0)
-    assert np.array_equal(mask, expected)
+    assert np.array_equal(mask, expected), f"Expected {expected} but got {mask}"
 
 
 @pytest.mark.unit
@@ -149,7 +157,7 @@ def test_compute_eligible_mask_100th_percentile_only_max_eligible():
     signal = np.array([1.0, 2.0, 10.0, 3.0, 10.0])
     mask = controller._compute_eligible_mask(signal)
     expected = np.array([False, False, True, False, True])
-    assert np.array_equal(mask, expected)
+    assert np.array_equal(mask, expected), f"Expected {expected} but got {mask}"
 
 
 @pytest.mark.unit
@@ -159,13 +167,12 @@ def test_compute_eligible_mask_uniform_signal_all_eligible():
     controller.config = SimpleNamespace(signal_threshold_percentile=75.0, min_peak_separation=None)
     signal = np.full(10, 5.0)
     mask = controller._compute_eligible_mask(signal)
-    assert mask.all()
+    assert mask.all(), f"Expected all True but got {mask}"
 
 
 @pytest.mark.regression
-def test_optimizer_dispatch_only_in_peak_window(base_config):
+def test_optimizer_dispatch_only_in_peak_window(subtests, base_config):
     """Solver must never set 1 outside the peak window."""
-    #
     controller = _make_controller_with_config(base_config)
     model = controller._build_dr_model(
         window_start=0,
@@ -179,16 +186,16 @@ def test_optimizer_dispatch_only_in_peak_window(base_config):
     PeakLoadManagementOptimizedStorageController.glpk_solve_call(model)
 
     peak_start, peak_end = controller._parse_peak_window()
-    print("Peak window:", peak_start, "-", peak_end)
     for t in range(24):
         hour = pd.Timestamp("2024-01-01") + pd.Timedelta(hours=t)
         in_window = peak_start <= hour.time() <= peak_end
         if not in_window:
-            assert pyomo.value(model.discharge[t]) < 1e-3  # type: ignore[index]
+            with subtests.test(f"No discharge outside peak window at t={t}"):
+                assert pyomo.value(model.discharge[t]) < 1e-3  # type: ignore[index]
 
 
 @pytest.mark.regression
-def test_optimizer_dispatch_only_on_eligible_timesteps(base_config):
+def test_optimizer_dispatch_only_on_eligible_timesteps(subtests, base_config):
     """Solver must never set 1 on ineligible timesteps."""
     controller = _make_controller_with_config(base_config)
     model = controller._build_dr_model(
@@ -206,7 +213,8 @@ def test_optimizer_dispatch_only_on_eligible_timesteps(base_config):
     eligible_mask = controller._compute_eligible_mask(signal)
     for t in range(24):
         if not eligible_mask[t]:
-            assert pyomo.value(model.discharge[t]) < 1e-3  # type: ignore[index]
+            with subtests.test(f"No discharge on ineligible timestep at t={t}"):
+                assert pyomo.value(model.discharge[t]) < 1e-3  # type: ignore[index]
 
 
 @pytest.mark.regression
@@ -217,7 +225,7 @@ def test_optimizer_dispatch_respects_event_budget(base_config):
         window_start=0,
         window_len=24,
         init_soc=base_config.init_soc_fraction,
-        remaining_budget={1: base_config.n_max_events},
+        remaining_budget={1: 4},
         P_max=base_config.max_charge_rate,
         storage_capacity=base_config.max_capacity,
     )
@@ -225,11 +233,11 @@ def test_optimizer_dispatch_respects_event_budget(base_config):
     PeakLoadManagementOptimizedStorageController.glpk_solve_call(model)
 
     total_events = sum(pyomo.value(model.discharge[t]) for t in range(24))  # type: ignore[index]
-    assert total_events <= base_config.n_max_events + 1e-3
+    assert total_events <= 4 + 1e-3, f"Total events {total_events} exceeds budget of 4"
 
 
 @pytest.mark.regression
-def test_optimizer_dispatch_respects_soc_constraints(base_config):
+def test_optimizer_dispatch_respects_soc_constraints(subtests, base_config):
     """Solver must never violate SOC constraints."""
     controller = _make_controller_with_config(base_config)
     model = controller._build_dr_model(
@@ -253,12 +261,13 @@ def test_optimizer_dispatch_respects_soc_constraints(base_config):
         p_discharge = pyomo.value(model.p_discharge[t])  # type: ignore[index]
         if t > 0:
             soc += eta_c * p_charge * dt_hours / E_max - p_discharge * dt_hours / (eta_d * E_max)
-        assert soc >= base_config.min_soc_fraction - 1e-6
-        assert soc <= base_config.max_soc_fraction + 1e-6
+        with subtests.test(f"SOC in bounds at t={t}"):
+            assert soc >= base_config.min_soc_fraction - 1e-6
+            assert soc <= base_config.max_soc_fraction + 1e-6
 
 
 @pytest.mark.unit
-def test_compute_eligible_mask_min_peak_separation_drops_nearby_peak():
+def test_compute_eligible_mask_min_peak_separation_drops_nearby_peak(subtests):
     """A later peak within min_peak_separation of an earlier peak is dropped."""
     controller = _make_controller()
     controller.config = SimpleNamespace(
@@ -268,13 +277,14 @@ def test_compute_eligible_mask_min_peak_separation_drops_nearby_peak():
     controller.dt_seconds = 3600
     signal = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 10.0, 1.0, 8.0, 1.0, 1.0])
     mask = controller._compute_eligible_mask(signal)
-    print(mask)
-    assert mask[0], "first peak should be kept"
-    assert not mask[1], "later peak within separation should be dropped"
+    with subtests.test("First eligible peak kept"):
+        assert mask[0]
+    with subtests.test("Adjacent peak within separation dropped"):
+        assert not mask[1]
 
 
 @pytest.mark.unit
-def test_compute_eligible_mask_min_peak_separation_keeps_far_peaks():
+def test_compute_eligible_mask_min_peak_separation_keeps_far_peaks(subtests):
     """Peaks separated by more than min_peak_separation are both kept."""
     controller = _make_controller()
     controller.config = SimpleNamespace(
@@ -282,11 +292,13 @@ def test_compute_eligible_mask_min_peak_separation_keeps_far_peaks():
         min_peak_separation={"units": "h", "val": 3},
     )
     controller.dt_seconds = 3600
-    # t=2 (signal=10) and t=6 (signal=8) are 4h apart — above the 3h threshold
+    # t=2 (signal=10) and t=6 (signal=8) are 4h apart
     signal = np.array([1.0, 1.0, 10.0, 1.0, 1.0, 1.0, 8.0, 1.0, 1.0, 1.0])
     mask = controller._compute_eligible_mask(signal)
-    assert mask[2], "first peak should be kept"
-    assert mask[6], "second peak far enough away should also be kept"
+    with subtests.test("First peak kept"):
+        assert mask[2]
+    with subtests.test("Distant peak also kept"):
+        assert mask[6]
 
 
 @pytest.mark.unit
@@ -299,18 +311,18 @@ def test_compute_eligible_mask_min_peak_separation_none_no_pruning():
     )
     signal = np.array([1.0, 5.0, 6.0, 5.0, 1.0])
     mask = controller._compute_eligible_mask(signal)
-    assert mask.all()
+    assert mask.all(), f"Expected all True but got {mask}"
 
 
 @pytest.mark.regression
-def test_optimizer_dispatch_respects_charge_discharge_exclusivity(base_config):
+def test_optimizer_dispatch_respects_charge_discharge_exclusivity(subtests, base_config):
     """Solver must never set charge and discharge to 1 in the same timestep."""
     controller = _make_controller_with_config(base_config)
     model = controller._build_dr_model(
         window_start=0,
         window_len=24,
         init_soc=base_config.init_soc_fraction,
-        remaining_budget={2: base_config.n_max_events},
+        remaining_budget={1: base_config.n_max_events},
         P_max=base_config.max_charge_rate,
         storage_capacity=base_config.max_capacity,
     )
@@ -320,12 +332,13 @@ def test_optimizer_dispatch_respects_charge_discharge_exclusivity(base_config):
     for t in range(24):
         charge = pyomo.value(model.charge[t])  # type: ignore[index]
         discharge = pyomo.value(model.discharge[t])  # type: ignore[index]
-        assert not (charge > 0.5 and discharge > 0.5)
+        with subtests.test(f"No simultaneous charge and discharge at t={t}"):
+            assert not (charge > 0.5 and discharge > 0.5)
 
 
 @pytest.mark.regression
-def test_mccormick_power_zero_when_binary_zero(base_config):
-    """McCormick constraint: p_discharge[t] must be 0 whenever discharge[t] == 0."""
+def test_power_zero_when_binary_zero(subtests, base_config):
+    """p_discharge[t] must be 0 whenever discharge[t] == 0."""
     controller = _make_controller_with_config(base_config)
     model = controller._build_dr_model(
         window_start=0,
@@ -343,14 +356,15 @@ def test_mccormick_power_zero_when_binary_zero(base_config):
         p_d = pyomo.value(model.p_discharge[t])  # type: ignore[index]
         v = pyomo.value(model.charge[t])  # type: ignore[index]
         p_c = pyomo.value(model.p_charge[t])  # type: ignore[index]
-        if u < 0.5:
-            assert p_d < 1e-6, f"p_discharge[{t}]={p_d} but discharge[{t}]={u}"
-        if v < 0.5:
-            assert p_c < 1e-6, f"p_charge[{t}]={p_c} but charge[{t}]={v}"
+        with subtests.test(f"Constraints at t={t}"):
+            if u < 0.5:
+                assert p_d < 1e-6, f"p_discharge[{t}]={p_d} but discharge[{t}]={u}"
+            if v < 0.5:
+                assert p_c < 1e-6, f"p_charge[{t}]={p_c} but charge[{t}]={v}"
 
 
 @pytest.mark.regression
-def test_performance_incentive_per_event_matches_equivalent_kwh_rate():
+def test_performance_incentive_per_event_matches_equivalent_kwh_rate(subtests):
     """$/event and its equivalent $/kWh rate must produce identical dispatch.
 
     With event_duration=2h, dt=1h, P_max=1.0 kW:
@@ -394,13 +408,14 @@ def test_performance_incentive_per_event_matches_equivalent_kwh_rate():
     PeakLoadManagementOptimizedStorageController.glpk_solve_call(model_event)
 
     for t in range(24):
-        assert (
-            abs(
-                pyomo.value(model_kwh.p_discharge[t])  # type: ignore[index]
-                - pyomo.value(model_event.p_discharge[t])  # type: ignore[index]
-            )
-            < 1e-4
-        ), f"dispatch mismatch at t={t}"
+        with subtests.test(f"dispatch match at t={t}"):
+            assert (
+                abs(
+                    pyomo.value(model_kwh.p_discharge[t])  # type: ignore[index]
+                    - pyomo.value(model_event.p_discharge[t])  # type: ignore[index]
+                )
+                < 1e-4
+            ), f"Dispatch mismatch at t={t}"
 
 
 @pytest.fixture
@@ -486,10 +501,7 @@ def test_plm_optimized_controller_om_problem_soc_bounds(subtests, om_plant_confi
     prob.run_model()
 
     soc = prob.get_val("SOC", units="unitless")
-    # print
-    print("SOC:", soc)
     discharge = prob.get_val("storage_electricity_discharge", units="kW")
-    print("Discharge:", discharge)
 
     with subtests.test("SOC never below min"):
         assert np.all(soc >= 0.0 - 1e-1)
@@ -500,30 +512,33 @@ def test_plm_optimized_controller_om_problem_soc_bounds(subtests, om_plant_confi
     pw = om_tech_config["model_inputs"]["control_parameters"]["peak_window"]
     pw_start = pd.Timestamp(f"2024-01-01 {pw['start']}").time()
     pw_end = pd.Timestamp(f"2024-01-01 {pw['end']}").time()
-    with subtests.test(f"discharge only inside peak window ({pw['start'][:5]}-{pw['end'][:5]})"):
-        time_index = pd.date_range("2024-01-01", periods=n, freq="h")
-        for t in range(n):
-            in_window = pw_start <= time_index[t].time() < pw_end
-            if not in_window:
+    time_index = pd.date_range("2024-01-01", periods=n, freq="h")
+    for t in range(n):
+        in_window = pw_start <= time_index[t].time() < pw_end
+        if not in_window:
+            with subtests.test(f"No discharge outside peak window at t={t}"):
                 assert (
                     discharge[t] <= 1e-4
-                ), f"discharge {discharge[t]:.4f} kW outside peak window at t={t}"
+                ), f"Discharge {discharge[t]:.4f} kW outside peak window at t={t}"
 
-    with subtests.test("discharge never negative"):
+    with subtests.test("Discharge never negative"):
         assert np.all(discharge >= -1e-4)
 
-    with subtests.test("discharge never above max_charge_rate"):
+    with subtests.test("Discharge never above max_charge_rate"):
         assert np.all(discharge <= 1.0 + 1e-4)
 
     with subtests.test("SOC at t=0 equal to init_soc_fraction"):
         assert abs(soc[0] - 1.0) < 1e-4
 
-    with subtests.test("SOC evolution consistent with discharge and charge"):
-        shared = om_tech_config["model_inputs"]["shared_parameters"]
-        E_max = shared["max_capacity"] * (shared["max_soc_fraction"] - shared["min_soc_fraction"])
-        charge = prob.get_val("storage_electricity_charge", units="kW")
-        expected_soc = np.zeros(n)
-        expected_soc[0] = shared["init_soc_fraction"]
-        for t in range(1, n):
-            expected_soc[t] = expected_soc[t - 1] + charge[t] / E_max - discharge[t] / E_max
-        assert np.allclose(soc, expected_soc, atol=1e-4)
+    shared = om_tech_config["model_inputs"]["shared_parameters"]
+    E_max = shared["max_capacity"] * (shared["max_soc_fraction"] - shared["min_soc_fraction"])
+    charge = prob.get_val("storage_electricity_charge", units="kW")
+    expected_soc = np.zeros(n)
+    expected_soc[0] = shared["init_soc_fraction"]
+    for t in range(1, n):
+        expected_soc[t] = expected_soc[t - 1] + charge[t] / E_max - discharge[t] / E_max
+    for t in range(n):
+        with subtests.test(f"SOC evolution at t={t}"):
+            assert (
+                abs(soc[t] - expected_soc[t]) < 1e-4
+            ), f"SOC mismatch at t={t}: got {soc[t]:.4f}, expected {expected_soc[t]:.4f}"
