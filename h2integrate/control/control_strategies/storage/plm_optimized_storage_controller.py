@@ -136,7 +136,7 @@ class PeakLoadManagementOptimizedStorageController(PyomoStorageControllerBaseCla
 
     dr_model: Any
     problem_state: DispatchProblemState
-
+    _time_step_bound = [300, 3600]
     def setup(self):
         """Initialize config, register OpenMDAO inputs, and pre-compute static masks.
 
