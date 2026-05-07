@@ -71,13 +71,17 @@ def test_parse_peak_window(subtests):
     controller = _make_controller()
     controller.config = SimpleNamespace(peak_window={"start": "08:00:00", "end": "18:40:20"})
     start, end = controller._parse_peak_window()
-    with subtests.test("start time"):
+    with subtests.test("start hour"):
         assert start.hour == 8
+    with subtests.test("start minute"):
         assert start.minute == 0
+    with subtests.test("start second"):
         assert start.second == 0
-    with subtests.test("end time"):
+    with subtests.test("end hour"):
         assert end.hour == 18
+    with subtests.test("end minute"):
         assert end.minute == 40
+    with subtests.test("end second"):
         assert end.second == 20
 
 
@@ -261,8 +265,9 @@ def test_optimizer_dispatch_respects_soc_constraints(subtests, base_config):
         p_discharge = pyomo.value(model.p_discharge[t])  # type: ignore[index]
         if t > 0:
             soc += eta_c * p_charge * dt_hours / E_max - p_discharge * dt_hours / (eta_d * E_max)
-        with subtests.test(f"SOC in bounds at t={t}"):
+        with subtests.test(f"SOC above min at t={t}"):
             assert soc >= base_config.min_soc_fraction - 1e-6
+        with subtests.test(f"SOC below max at t={t}"):
             assert soc <= base_config.max_soc_fraction + 1e-6
 
 
@@ -356,9 +361,10 @@ def test_power_zero_when_binary_zero(subtests, base_config):
         p_d = pyomo.value(model.p_discharge[t])  # type: ignore[index]
         v = pyomo.value(model.charge[t])  # type: ignore[index]
         p_c = pyomo.value(model.p_charge[t])  # type: ignore[index]
-        with subtests.test(f"Constraints at t={t}"):
+        with subtests.test(f"p_discharge zero when binary zero at t={t}"):
             if u < 0.5:
                 assert p_d < 1e-6, f"p_discharge[{t}]={p_d} but discharge[{t}]={u}"
+        with subtests.test(f"p_charge zero when binary zero at t={t}"):
             if v < 0.5:
                 assert p_c < 1e-6, f"p_charge[{t}]={p_c} but charge[{t}]={v}"
 

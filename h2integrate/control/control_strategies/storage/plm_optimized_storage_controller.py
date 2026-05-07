@@ -89,7 +89,7 @@ class PeakLoadManagementOptimizedControllerConfig(PyomoStorageControllerBaseConf
 
     def __attrs_post_init__(self):
         # Make sure n_control_window_hours is an int
-        self.n_control_window_hours = int(round(self.n_control_window_hours))
+        self.n_control_window_hours = int(math.ceil(self.n_control_window_hours))
         super().__attrs_post_init__()
 
         both_set = (
@@ -227,7 +227,7 @@ class PeakLoadManagementOptimizedStorageController(PyomoStorageControllerBaseCla
             discrete_inputs (dict): OpenMDAO discrete inputs.
             discrete_outputs (dict): OpenMDAO discrete outputs. The key
                 ``'pyomo_dispatch_solver'`` is set to the callable
-                returned by :meth:`pyomo_setup`.
+                returned by `pyomo_setup`.
         """
         discrete_outputs["pyomo_dispatch_solver"] = self.pyomo_setup(discrete_inputs, inputs)
 
@@ -310,6 +310,8 @@ class PeakLoadManagementOptimizedStorageController(PyomoStorageControllerBaseCla
                 for t in range(window_len):
                     discharging = pyomo.value(self.dr_model.discharge[t]) > 0.5
                     prev_discharging = t > 0 and pyomo.value(self.dr_model.discharge[t - 1]) > 0.5
+                    # Detect the rising edge of a discharge event (0 -> 1) and count
+                    # it if it occurs in this window.
                     if discharging and not prev_discharging:
                         month = int(month_ids_w[t])
                         if month not in events_used_per_month:
@@ -326,9 +328,8 @@ class PeakLoadManagementOptimizedStorageController(PyomoStorageControllerBaseCla
                 # Performance model returns SOC in percent.
                 self.updated_initial_soc = soc_window[-1] / 100.0
 
-                for j in range(window_len):
-                    storage_out[window_start + j] = storage_out_window[j]
-                    soc_out[window_start + j] = soc_window[j]
+                storage_out[window_start : window_start + window_len] = storage_out_window
+                soc_out[window_start : window_start + window_len] = soc_window
 
             return storage_out, soc_out
 
@@ -417,18 +418,24 @@ class PeakLoadManagementOptimizedStorageController(PyomoStorageControllerBaseCla
             np.ndarray: Boolean array of shape ``(len(signal_window),)``.
                 ``True`` where ``signal_t >= threshold``.
         """
+        # Use all the timesteps in the window if no dispatch_mask is provided, otherwise restrict
+        # to the dispatch window
         mask = (
             dispatch_mask if dispatch_mask is not None else np.ones(len(signal_window), dtype=bool)
         )
 
+        # If the threshold percentile is 0 or there are dispatch_window is all 0s
+        # all timesteps are eligible
         if self.config.signal_threshold_percentile == 0.0 or not mask.any():
             return mask.copy()
 
+        # Keep only the timesteps where the signal is above the threshold computed from the
+        # dispatch window
         threshold = np.percentile(signal_window[mask], self.config.signal_threshold_percentile)
         eligible = mask & (signal_window >= threshold)
 
         if self.config.min_peak_separation is not None:
-            sep_steps = (
+            sep_steps = math.ceil(
                 pd.Timedelta(
                     value=self.config.min_peak_separation["val"],
                     unit=self.config.min_peak_separation["units"],
@@ -453,7 +460,7 @@ class PeakLoadManagementOptimizedStorageController(PyomoStorageControllerBaseCla
         self,
         eligible_mask: np.ndarray,
     ) -> np.ndarray:
-        """Expand each eligible peak timestep by +/-event_duration/2.
+        """Expand each eligible peak timestep by +/- event_duration/2.
 
         Every True timestep in ``eligible_mask`` is
         treated as a peak and all timesteps within ``event_duration / 2``
@@ -470,14 +477,7 @@ class PeakLoadManagementOptimizedStorageController(PyomoStorageControllerBaseCla
         if self.config.event_duration is None:
             return eligible_mask.copy()
 
-        half_event_steps = (
-            pd.Timedelta(
-                value=self.config.event_duration["val"],
-                unit=self.config.event_duration["units"],
-            ).total_seconds()
-            / 2.0
-            / self.dt_seconds
-        )
+        half_event_steps = self.steps_per_event / 2
         peak_indices = np.where(eligible_mask)[0]
         event_mask = np.zeros(len(eligible_mask), dtype=bool)
         for peak in peak_indices:
