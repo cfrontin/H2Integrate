@@ -7,10 +7,7 @@ import pandas as pd
 import pytest
 import openmdao.api as om
 
-from h2integrate import ROOT_DIR
-from h2integrate.core.file_utils import load_yaml
-from h2integrate.core.h2integrate_model import H2IntegrateModel
-from h2integrate.core.inputs.validation import load_plant_yaml
+from h2integrate import ROOT_DIR, H2IntegrateModel, load_yaml, load_plant_yaml
 
 
 ROOT = Path(__file__).parents[1]
@@ -850,7 +847,7 @@ def test_hybrid_energy_plant_example(subtests, temp_copy_of_example):
     "example_folder,resource_example_folder", [("13_dispatch_for_electrolyzer", None)]
 )
 def test_electrolyzer_demand(subtests, temp_copy_of_example):
-    from h2integrate.core.inputs.validation import load_tech_yaml, load_plant_yaml, load_driver_yaml
+    from h2integrate import load_tech_yaml, load_plant_yaml, load_driver_yaml
 
     example_folder = temp_copy_of_example
 
@@ -1756,9 +1753,9 @@ def test_csvgen_design_of_experiments(subtests, temp_copy_of_example):
         model = H2IntegrateModel(example_folder / "20_solar_electrolyzer_doe.yaml")
         assert "There may be issues with the csv file csv_doe_cases.csv" in str(excinfo.value)
 
+    from h2integrate import write_yaml, load_driver_yaml
     from h2integrate.core.dict_utils import update_defaults
     from h2integrate.core.file_utils import check_file_format_for_csv_generator
-    from h2integrate.core.inputs.validation import write_yaml, load_driver_yaml
 
     # load the driver config file
     driver_config = load_driver_yaml("driver_config.yaml")
