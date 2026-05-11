@@ -39,6 +39,7 @@ class State(IntEnum):
     SETUP = 1
     RUN = 2
     POST_PROCESS = 3
+    DELETE_ME = 4
 
 
 class H2IntegrateModel:
