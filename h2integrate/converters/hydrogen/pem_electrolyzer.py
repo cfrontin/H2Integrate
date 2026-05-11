@@ -183,6 +183,7 @@ class ECOElectrolyzerPerformanceModel(ElectrolyzerPerformanceBaseClass):
             outputs["efficiency"] = H2_Results["Sim: Average Efficiency [%-HHV]"]
         refurb_schedule = np.zeros(self.plant_life)
 
+        # TODO: remove time_until_replacement as output after finance model(s) have been updated to not use it
         if np.isnan(H2_Results["Time Until Replacement [hrs]"]):
             # if electrolyzer is never turned on, then make the
             # replacement outputs based on uptime hours until EOL
@@ -204,9 +205,6 @@ class ECOElectrolyzerPerformanceModel(ElectrolyzerPerformanceBaseClass):
         # ['Refurbishment Schedule [MW replaced/year]'].values
         # /electrolyzer_actual_capacity_MW
         # )
-
-        # TODO: remove time_until_replacement as output after finance model(s) have been updated to not use it
-        outputs["time_until_replacement"] = H2_Results["Time Until Replacement [hrs]"]
 
         outputs["rated_hydrogen_production"] = H2_Results["Rated BOL: H2 Production [kg/hr]"]
         outputs["electrolyzer_size_mw"] = electrolyzer_actual_capacity_MW
