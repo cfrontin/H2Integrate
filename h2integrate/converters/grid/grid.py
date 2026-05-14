@@ -104,6 +104,22 @@ class GridPerformanceModel(PerformanceModelBaseClass):
         )
 
         self.add_output(
+            "electricity_headroom_sold",
+            val=0.0,
+            shape=n_timesteps,
+            units="kW",
+            desc="Reserve capacity that could be sold to the grid",
+        )
+
+        self.add_output(
+            "electricity_headroom_out",
+            val=0.0,
+            shape=n_timesteps,
+            units="kW",
+            desc="Reserve capacity that could be bought from the grid",
+        )
+
+        self.add_output(
             "electricity_unmet_demand",
             val=0.0,
             shape=n_timesteps,
@@ -147,6 +163,8 @@ class GridPerformanceModel(PerformanceModelBaseClass):
         max_production = (
             inputs["interconnection_size"] * len(outputs["electricity_out"]) * (self.dt / 3600)
         )
+        outputs["electricity_headroom_sold"] = max_production - electricity_sold
+        outputs["electricity_headroom_out"] = max_production - electricity_bought
         outputs["rated_electricity_production"] = inputs["interconnection_size"]
         outputs["total_electricity_produced"] = np.sum(outputs["electricity_out"]) * (
             self.dt / 3600
