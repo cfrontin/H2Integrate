@@ -1670,8 +1670,16 @@ class H2IntegrateModel:
                     )
 
             elif len(connection) == 3:
-                # connect directly from source to dest
                 source_tech, dest_tech, connected_parameter = connection
+                src_indices = None
+
+                # initialize src_indices to allow connections between different shaped variables
+                if isinstance(connected_parameter, list):
+                    connected_parameter, src_indices = (
+                        self._split_indices_from_connected_parameter_definition(connected_parameter)
+                    )
+
+                # connect directly from source to dest
                 if isinstance(connected_parameter, tuple | list):
                     source_parameter, dest_parameter = connected_parameter
                     # Check if this is a multivariable stream connection
@@ -1685,7 +1693,9 @@ class H2IntegrateModel:
                         )
                     else:
                         self.plant.connect(
-                            f"{source_tech}.{source_parameter}", f"{dest_tech}.{dest_parameter}"
+                            f"{source_tech}.{source_parameter}",
+                            f"{dest_tech}.{dest_parameter}",
+                            src_indices=src_indices,
                         )
                 else:
                     # Check if the connected_parameter is a multivariable stream
@@ -1701,6 +1711,7 @@ class H2IntegrateModel:
                         self.plant.connect(
                             f"{source_tech}.{connected_parameter}",
                             f"{dest_tech}.{connected_parameter}",
+                            src_indices=src_indices,
                         )
 
             else:
@@ -2245,3 +2256,87 @@ class H2IntegrateModel:
         tech_commodities = [e[1] for e in self.techs_to_commodities if e[0] == tech_name]
 
         return tech_commodities
+
+    @staticmethod
+    def _split_indices_from_connected_parameter_definition(connected_parameter):
+        """Extract and parse slice indices from connected parameter definitions for OpenMDAO
+        connections.
+
+        This function processes parameter names containing slice patterns in square brackets
+        (e.g., "power[0:8760]") and generates OpenMDAO-compatible src_indices for connections
+        between variables of different shapes.
+
+        Args:
+            connected_parameter (list[str]): A two-element list containing:
+                - [0] source parameter name, optionally with pattern like "var[slice_spec]"
+                - [1] destination parameter name, optionally with pattern like "var[slice_spec]"
+
+                Example: ["power[0:8760]", "demand[:]"]
+
+        Returns:
+            tuple: A two-element tuple containing:
+                - connected_parameter (list[str]): The parameter names with slices removed
+                  (e.g., ["power", "demand"])
+                - src_indices: OpenMDAO slicer object for indexing source outputs to match
+                  destination input shapes. Returns om.slicer[slice] for indexing.
+
+        Note:
+            If the destination has a slice pattern, it must include the length ":N"
+            (e.g., "[0:N]"), the function extracts N as the destination length and
+            multiplies the source slice by this factor to create properly scaled indices.
+            The length is required because the length is not known in the OpenMDAO model
+            until prob.setup() has been called.
+        """
+        source_parameter, dest_parameter = connected_parameter
+
+        def _extract_slice(parameter):
+            """Return the contents inside the brackets (e.g. '0:8760'), or None."""
+            match = re.search(r"\[(.*)\]", parameter)
+            return None if match is None else match.group(1)
+
+        def _to_indices(spec):
+            """Convert a bracket spec string into a slice or list of ints."""
+            if ":" in spec:
+                return slice(*(int(p) if p.strip() else None for p in spec.split(":")))
+            return [int(p) for p in spec.split(",")]
+
+        source_slice = _extract_slice(source_parameter)
+        dest_slice = _extract_slice(dest_parameter)
+
+        if source_slice == dest_slice:
+            src_indices = None
+        elif dest_slice is not None and source_slice is not None:
+            # Tile the source indices to fill the destination length to handle shape
+            # mismatches. Examples:
+            #   source="0",   dest_length=8760 -> [0] repeated 8760 times
+            #   source="0,1", dest_length=10   -> [0, 1] cycled to fill 10 slots
+            if dest_slice.split(":")[0] not in ("", "0"):
+                raise ValueError(
+                    "A non-zero start was provided for the slice for destination "
+                    f"parameter <{dest_parameter}>"
+                )
+            dest_length = int(dest_slice.split(":")[-1])
+
+            source_indices = _to_indices(source_slice)
+            if isinstance(source_indices, slice):
+                source_indices = list(
+                    range(
+                        source_indices.start or 0,
+                        source_indices.stop,
+                        source_indices.step or 1,
+                    )
+                )
+
+            # Repeat the source values enough times to cover the destination, then
+            # truncate so the result is exactly dest_length long. This cycles through
+            # the source values when the source is shorter than the destination.
+            n_repeats = -(-dest_length // len(source_indices))  # ceiling division
+            src_indices = om.slicer[(source_indices * n_repeats)[:dest_length]]
+        else:
+            # No destination slice pattern; use source slice pattern directly.
+            src_indices = None if source_slice is None else om.slicer[_to_indices(source_slice)]
+
+        # Remove the slice patterns from parameter names to get clean names.
+        connected_parameter = [source_parameter.split("[")[0], dest_parameter.split("[")[0]]
+
+        return connected_parameter, src_indices
