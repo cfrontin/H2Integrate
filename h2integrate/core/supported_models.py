@@ -129,6 +129,7 @@ supported_models = _ModelRegistry(
         "QuinnNuclearPerformanceModel": "converters.nuclear:QuinnNuclearPerformanceModel",
         "QuinnNuclearCostModel": "converters.nuclear:QuinnNuclearCostModel",
         "NaturalGasCostModel": "converters.natural_gas:NaturalGasCostModel",
+        "SimpleCycleTurbinePerformanceModel": "converters.combustion_machines:SimpleCycleTurbinePerformanceModel",
         # Transport
         "cable": "transporters:CablePerformanceModel",
         "pipe": "transporters:PipePerformanceModel",
