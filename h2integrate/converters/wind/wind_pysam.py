@@ -442,8 +442,9 @@ class PYSAMWindPlantPerformanceModel(WindPerformanceBaseClass):
             self.system_model.value("wind_turbine_ct_curve", tuple(resampled_ct.tolist()))
 
         success = False
-        if max(self.system_model.value("wind_turbine_powercurve_powerout")) == float(
-            turbine_rating_kw
+        if np.isclose(
+            max(self.system_model.value("wind_turbine_powercurve_powerout")),
+            float(turbine_rating_kw),
         ):
             success = True
         return success
