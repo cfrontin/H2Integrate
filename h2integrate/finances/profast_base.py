@@ -1,12 +1,11 @@
 import attrs
 import numpy as np
 import openmdao.api as om
-from attrs import field, define
+from attrs import field, define, validators
 
 from h2integrate.core.utilities import BaseConfig, attr_filter, attr_serializer
 from h2integrate.finances.tools import check_plant_config_and_profast_params
 from h2integrate.core.dict_utils import update_defaults
-from h2integrate.core.validators import gt_zero, contains, gte_zero, range_val
 from h2integrate.tools.profast_tools import create_years_of_operation, create_and_populate_profast
 
 
@@ -172,41 +171,43 @@ class BasicProFASTParameterConfig(BaseConfig):
     """
 
     # --- Primary finance parameters ---
-    plant_life: int = field(converter=int, validator=gte_zero)
-    analysis_start_year: int = field(converter=int, validator=range_val(1000, 4000))
-    installation_time: int = field(converter=int, validator=gte_zero)
+    plant_life: int = field(converter=int, validator=validators.ge(0))
+    analysis_start_year: int = field(
+        converter=int, validator=(validators.ge(1000), validators.le(4000))
+    )
+    installation_time: int = field(converter=int, validator=validators.ge(0))
 
-    discount_rate: float = field(validator=range_val(0, 1))
-    debt_equity_ratio: float = field(validator=gt_zero)
-    property_tax_and_insurance: float = field(validator=range_val(0, 1))
+    discount_rate: float = field(validator=(validators.ge(0), validators.le(1)))
+    debt_equity_ratio: float = field(validator=validators.gt(0))
+    property_tax_and_insurance: float = field(validator=(validators.ge(0), validators.le(1)))
 
-    total_income_tax_rate: float = field(validator=range_val(0, 1))
-    capital_gains_tax_rate: float = field(validator=range_val(0, 1))
-    sales_tax_rate: float = field(validator=range_val(0, 1))
-    debt_interest_rate: float = field(validator=range_val(0, 1))
+    total_income_tax_rate: float = field(validator=(validators.ge(0), validators.le(1)))
+    capital_gains_tax_rate: float = field(validator=(validators.ge(0), validators.le(1)))
+    sales_tax_rate: float = field(validator=(validators.ge(0), validators.le(1)))
+    debt_interest_rate: float = field(validator=(validators.ge(0), validators.le(1)))
 
-    inflation_rate: float = field(validator=range_val(0, 1))
+    inflation_rate: float = field(validator=(validators.ge(0), validators.le(1)))
 
     cash_onhand_months: int = field(converter=int)  # int?
 
-    admin_expense: float = field(validator=range_val(0, 1))
+    admin_expense: float = field(validator=(validators.ge(0), validators.le(1)))
 
     # --- Optional parameters ---
-    non_depr_assets: float = field(default=0.0, validator=gte_zero)
-    end_of_proj_sale_non_depr_assets: float = field(default=0.0, validator=gte_zero)
+    non_depr_assets: float = field(default=0.0, validator=validators.ge(0))
+    end_of_proj_sale_non_depr_assets: float = field(default=0.0, validator=validators.ge(0))
 
-    tax_loss_carry_forward_years: int = field(default=0, validator=gte_zero)
+    tax_loss_carry_forward_years: int = field(default=0, validator=validators.ge(0))
     tax_losses_monetized: bool = field(default=True)
     sell_undepreciated_cap: bool = field(default=True)
 
     credit_card_fees: float = field(default=0.0)
-    demand_rampup: float = field(default=0.0, validator=gte_zero)
+    demand_rampup: float = field(default=0.0, validator=validators.ge(0))
 
     # --- Debt configuration ---
     debt_type: str = field(
-        default="Revolving debt", validator=contains(["Revolving debt", "One time loan"])
+        default="Revolving debt", validator=validators.in_(["Revolving debt", "One time loan"])
     )
-    loan_period_if_used: int = field(default=0, validator=gte_zero)
+    loan_period_if_used: int = field(default=0, validator=validators.ge(0))
 
     # --- Nested dictionaries (financial categories) ---
     commodity: dict = field(
@@ -214,7 +215,7 @@ class BasicProFASTParameterConfig(BaseConfig):
             "name": None,
             "unit": None,
             "initial price": 100,
-            "escalation": 0.0,
+            "escalation": None,
         }
     )
 
@@ -243,12 +244,12 @@ class BasicProFASTParameterConfig(BaseConfig):
             "taxable": True,
         }
     )
-    incidental_revenue: dict = field(default={"value": 0.0, "escalation": 0.0})
-    road_tax: dict = field(default={"value": 0.0, "escalation": 0.0})
-    labor: dict = field(default={"value": 0.0, "rate": 0.0, "escalation": 0.0})
-    maintenance: dict = field(default={"value": 0.0, "escalation": 0.0})
-    rent: dict = field(default={"value": 0.0, "escalation": 0.0})
-    license_and_permit: dict = field(default={"value": 0.0, "escalation": 0.0})
+    incidental_revenue: dict = field(default={"value": 0.0, "escalation": None})
+    road_tax: dict = field(default={"value": 0.0, "escalation": None})
+    labor: dict = field(default={"value": 0.0, "rate": 0.0, "escalation": None})
+    maintenance: dict = field(default={"value": 0.0, "escalation": None})
+    rent: dict = field(default={"value": 0.0, "escalation": None})
+    license_and_permit: dict = field(default={"value": 0.0, "escalation": None})
     one_time_cap_inct: dict = field(
         default={"value": 0.0, "depr type": "MACRS", "depr period": 3, "depreciable": False}
     )
@@ -269,8 +270,19 @@ class BasicProFASTParameterConfig(BaseConfig):
         # Rename underscores to spaces for ProFAST compatibility
         pf_params = {k.replace("_", " "): v for k, v in pf_params_init.items()}
 
+        # If a user provides a non-default escalation value, track it before
+        # updating it to the inflation rate
+        input_escalation_params = {}
+        for k, v in pf_params.items():
+            if isinstance(v, dict) and ("escalation" in v):
+                if v.get("escalation", None) is not None:
+                    input_escalation_params[k] = v.copy()
+
         # Apply inflation rate defaults to escalation fields
         pf_params = update_defaults(pf_params, "escalation", self.inflation_rate)
+        # Ensure that user-specified escalation values are not over-written to `inflation_rate``
+        # when `update_defaults` is called
+        pf_params |= input_escalation_params
 
         # Remap finance keys to ProFAST names where applicable
         params = {}
@@ -300,10 +312,14 @@ class ProFASTDefaultCapitalItem(BaseConfig):
 
     """
 
-    depr_period: int = field(converter=int, validator=contains([3, 5, 7, 10, 15, 20]))
-    depr_type: str = field(converter=str.strip, validator=contains(["MACRS", "Straight line"]))
+    depr_period: int = field(converter=int, validator=validators.in_([3, 5, 7, 10, 15, 20]))
+    depr_type: str = field(
+        converter=str.strip, validator=validators.in_(["MACRS", "Straight line"])
+    )
     refurb: int | float | list[float] = field(default=[0.0])
-    replacement_cost_percent: float = field(default=0.0, validator=range_val(0, 1))
+    replacement_cost_percent: float = field(
+        default=0.0, validator=(validators.ge(0), validators.le(1))
+    )
 
     def create_dict(self):
         """Create a ProFAST-compatible dictionary of attributes.
@@ -477,13 +493,6 @@ class ProFastBase(om.ExplicitComponent):
             per year of the plant life.
         replacement_schedule_{tech} (np.ndarray): Fraction of the technology capacity that
             is replaced in each year of the plant life.
-
-
-    Methods:
-        initialize(): Declares component options.
-        setup(): Defines inputs/outputs and initializes ProFAST configuration.
-        populate_profast(inputs): Builds a ProFAST input dictionary based on user inputs.
-        compute(inputs, outputs, ...): Must be implemented in a subclass.
     """
 
     def initialize(self):

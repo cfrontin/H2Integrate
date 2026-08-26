@@ -1,6 +1,5 @@
-from attrs import field, define
-
 import numpy as np
+from attrs import field, define
 
 from h2integrate.core.utilities import merge_shared_inputs
 from h2integrate.core.validators import gt_zero, gte_zero, range_val
@@ -108,24 +107,33 @@ class EnhancedATBWindPlantCostModel(CostModelBaseClass):
             desc="rotor tip path ground clearance",
         )
 
-
     def compute(self, inputs, outputs, discrete_inputs, discrete_outputs):
         capex_orig = self.config.capex_per_kW * inputs["rated_electricity_production"]
         # print(f"capex_orig: {capex_orig}")  # DEBUG!!!!!
-        capex_turbine_base = 6.164  # MUSD,
         SP_base = 232.5  # -, from: https://atb.nrel.gov/electricity/2024b/land-based_wind
         P_base = 5900.0  # kW, from: https://atb.nrel.gov/electricity/2024b/land-based_wind
         D_base = np.sqrt(4 / np.pi * (inputs["wind_turbine_rating"] * 1000.0) / SP_base)
 
         # this is based on a silly analysis in @cfrontin's h2i_sandbox/csm_sandbox.ipynb
         p_slopes = [0.02209403, 0.1357578, 0.27937119]
-        p_intercepts = [ 0.69012541, 1.00728755, -0.19892396]
+        p_intercepts = [0.69012541, 1.00728755, -0.19892396]
         # those are based on
-        # print(f"P_base: {P_base}; inputs['turbine_rating_kw']: {inputs['turbine_rating_kw']}")  # DEBUG!!!!!
-        # print(f"D_base: {D_base}; inputs['rotor_diameter']: {inputs['rotor_diameter']}")  # DEBUG!!!!!
-        slope_rotor_diameter = np.polyval(p_slopes, (inputs["wind_turbine_rating"] - P_base)/P_base)
-        intercept_rotor_diameter = np.polyval(p_intercepts, (inputs["wind_turbine_rating"] - P_base)/P_base)
-        rotor_diameter_capex_adjustment = slope_rotor_diameter*(inputs["rotor_diameter"] - D_base)/D_base + intercept_rotor_diameter
+        # print(
+        #     f"P_base: {P_base}; inputs['turbine_rating_kw']: {inputs['turbine_rating_kw']}"
+        # )  # DEBUG!!!!!
+        # print(
+        #     f"D_base: {D_base}; inputs['rotor_diameter']: {inputs['rotor_diameter']}"
+        # )  # DEBUG!!!!!
+        slope_rotor_diameter = np.polyval(
+            p_slopes, (inputs["wind_turbine_rating"] - P_base) / P_base
+        )
+        intercept_rotor_diameter = np.polyval(
+            p_intercepts, (inputs["wind_turbine_rating"] - P_base) / P_base
+        )
+        rotor_diameter_capex_adjustment = (
+            slope_rotor_diameter * (inputs["rotor_diameter"] - D_base) / D_base
+            + intercept_rotor_diameter
+        )
         # print("rotor_diameter_capex_adjustment:", rotor_diameter_capex_adjustment)  # DEBUG!!!!!
 
         capex = (
@@ -134,8 +142,10 @@ class EnhancedATBWindPlantCostModel(CostModelBaseClass):
         )
         opex = self.config.opex_per_kW_per_year * inputs["rated_electricity_production"]
 
-        outputs["tip_clearance"] = inputs["hub_height"] - 0.5*inputs["rotor_diameter"]
-        outputs["specific_power"] = inputs["wind_turbine_rating"]*1000.0/(0.25*np.pi*inputs["rotor_diameter"]**2)
+        outputs["tip_clearance"] = inputs["hub_height"] - 0.5 * inputs["rotor_diameter"]
+        outputs["specific_power"] = (
+            inputs["wind_turbine_rating"] * 1000.0 / (0.25 * np.pi * inputs["rotor_diameter"] ** 2)
+        )
 
         outputs["CapEx"] = capex
         outputs["OpEx"] = opex
