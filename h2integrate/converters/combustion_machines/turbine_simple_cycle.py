@@ -191,6 +191,13 @@ class SimpleCycleTurbinePerformanceModel(PerformanceModelBaseClass):
             units="kJ/s",
             desc="natural gas consumed by the plant",
         )
+        self.add_output(
+            "thermal_efficiency",
+            val=0.0,
+            shape=self.n_timesteps,
+            units="unitless",
+            desc="thermal efficiency of the turbine/plant",
+        )
 
         self.add_output(
             f"unmet_{self.commodity}_demand",
@@ -285,7 +292,6 @@ class SimpleCycleTurbinePerformanceModel(PerformanceModelBaseClass):
         unit_mass_net_heat_input_vec = [
             result.process_heat_unit[(2, 3)] for result in self.fundamental_cycle
         ]  # kJ/kg
-        [result.get_efficiency() for result in self.fundamental_cycle]  # -
 
         # compute the rating/flowrate/input heat limited flowrate
         turbine_mass_flowrates = [
@@ -332,6 +338,9 @@ class SimpleCycleTurbinePerformanceModel(PerformanceModelBaseClass):
         electricity_out = num_turbines * generator_efficiency * turbine_net_work_vec  # MW
         outputs["electricity_out"] = electricity_out
         outputs[f"{self.config.fuel_source}_consumed"] = num_turbines * turbine_net_heat_input_vec
+        outputs["thermal_efficiency"] = [
+            result.get_efficiency() for result in self.fundamental_cycle
+        ]  # -
 
         outputs["rated_electricity_production"] = num_turbines * turbine_capacity_mw
 
