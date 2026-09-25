@@ -84,8 +84,9 @@ class NaturalGasPerformanceModel(PerformanceModelBaseClass):
                     "n_timesteps": plant_simulation_config.get("n_timesteps", 8760),
                 },
             }
-            config = merge_shared_inputs(self.options["tech_config"]["model_inputs"], "reliability")
-            self.reliability_model = PerformanceReliability(config=config | simulation_config)
+            config = self.options["tech_config"]["model_inputs"]["reliability"]
+            use_reliability = config.get("use_reliability", use_reliability)
+            self.reliability_model = PerformanceReliability.from_dict(config | simulation_config)
         self.use_reliability = use_reliability
 
         # Add natural gas consumed output
@@ -174,6 +175,7 @@ class NaturalGasPerformanceModel(PerformanceModelBaseClass):
         )
         natural_gas_demand = electricity_command_value * heat_rate_mmbtu_per_mwh
         if self.use_reliability:
+            self.reliability_model.run()
             natural_gas_demand * self.reliability_model.availability
 
         # available feedstock, saturated at maximum system feedstock consumption
